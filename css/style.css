@@ -1,0 +1,193 @@
+/* =========================================
+   Root Theme Variables
+========================================= */
+:root {
+  --bg: #020817;
+  --panel: #050816;
+  --panel-2: #0b1020;
+  --panel-grad: linear-gradient(180deg, rgba(15,23,42,.98), rgba(2,6,23,1));
+  --text: #e5e7eb;
+  --muted: #9ca3af;
+  --accent: #60a5fa;
+
+  --ok:   #34d399;
+  --warn: #fbbf24;
+  --bad:  #f87171;
+
+  --cool: #38bdf8;
+  --warm: #f97316;
+  --hot:  #ef4444;
+
+  --border: rgba(148,163,253,.18);
+
+  --shadow:       0 16px 40px rgba(15,23,42,.7);
+  --shadow-soft:  0 10px 26px rgba(15,23,42,.55);
+
+  --radius-xl: 18px;
+  --radius-md: 12px;
+
+  --transition-fast: 0.16s ease;
+  --transition-med:  0.25s ease;
+}
+
+/* Light mode overrides */
+[data-theme="light"] {
+  --bg: #e5e9f5;
+  --panel: #ffffff;
+  --panel-2: #f3f6fb;
+  --panel-grad: linear-gradient(180deg, #ffffff, #edf2ff);
+  --text: #020817;
+  --muted: #6b7280;
+  --accent: #2563eb;
+
+  --ok:   #059669;
+  --warn: #d97706;
+  --bad:  #dc2626;
+
+  --cool: #2563eb;
+  --warm: #b45309;
+  --hot:  #b91c1c;
+
+  --border: rgba(15,23,42,.08);
+
+  --shadow:       0 14px 32px rgba(15,23,42,.16);
+  --shadow-soft:  0 10px 24px rgba(15,23,42,.12);
+}
+
+/* =========================================
+   Reset + Body
+========================================= */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI",
+               Roboto, Inter, "Helvetica Neue", Arial, "Noto Sans";
+  color: var(--text);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(56,189,248,0.12), transparent 55%),
+    radial-gradient(circle at 100% 0%, rgba(129,140,248,0.14), transparent 55%),
+    radial-gradient(circle at 0% 100%, rgba(236,72,153,0.08), transparent 55%),
+    linear-gradient(180deg, #020817, var(--bg));
+  background-attachment: fixed;
+
+  /* Prevent notch clipping on iPhone */
+  padding-top: env(safe-area-inset-top, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  padding-left: env(safe-area-inset-left, 0);
+  padding-right: env(safe-area-inset-right, 0);
+
+  min-height: 100vh;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  body {
+    animation: ambientShift 26s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes ambientShift {
+  0%   { background-position: 0 0, 100% 0, 0 100%, 0 0; }
+  100% { background-position: -10px 12px, 100% -16px, 8px 100%, 0 10px; }
+}
+
+/* =========================================
+   Header
+========================================= */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: calc(10px + env(safe-area-inset-top)) 14px 10px 14px;
+
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  border-bottom: 1px solid rgba(148,163,253,.14);
+}
+
+[data-theme="light"] header {
+  background: color-mix(in srgb, var(--panel-2) 86%, #ffffff 14%);
+  border-bottom-color: var(--border);
+}
+
+h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--panel-2) 88%, transparent);
+}
+
+/* =========================================
+   Toolbar Controls
+========================================= */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.btn {
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  padding: 7px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  box-shadow: var(--shadow-soft);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border) 60%);
+}
+
+.btn.active {
+  background: color-mix(in srgb, var(--accent) 82%, #000 18%);
+  color: #0f172a;
+  border-color: transparent;
+  box-shadow: 0 6px 18px rgba(37,99,235,.45);
+}
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.i

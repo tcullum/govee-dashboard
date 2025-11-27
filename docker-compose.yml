@@ -1,0 +1,14 @@
+﻿services:
+  govee:
+    build: .
+    container_name: govee-dashboard
+    working_dir: /app
+    ports:
+      - "8000:8000"
+    environment:
+      GOVEE_API_KEY: ${GOVEE_API_KEY}
+      NOAA_TOKEN: ${NOAA_TOKEN}
+      PORT: ${PORT}
+    volumes:
+      - ./:/app
+    restart: unless-stopped
