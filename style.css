@@ -177,19 +177,21 @@ h1{ margin:0; font-size:20px; font-weight:700; display:flex; align-items:center;
 #weatherUpcoming { display:flex; gap:10px; margin-top:14px; }
 
 .forecast-tile {
-  flex:1; background:rgba(255,255,255,0.04); border-radius:10px; padding:10px 6px;
+  flex:1; background:rgba(255,255,255,0.04); border-radius:10px; padding:14px 8px;
   text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:space-between;
-  min-height: 95px; transition: transform 0.2s;
+  min-height: 110px; transition: transform 0.2s; gap: 6px;
 }
 [data-theme="light"] .forecast-tile { background:rgba(255,255,255,0.5); border:1px solid rgba(0,0,0,0.05); }
 .forecast-tile:hover { transform:translateY(-3px); background:rgba(255,255,255,0.08); }
-.forecast-tile .day { font-size:13px; font-weight:700; margin-bottom: 4px; }
+.forecast-tile .day { font-size:13px; font-weight:700; margin-bottom: 2px; }
+.forecast-tile .icon { margin: 4px 0; }
 .forecast-tile .temps { font-size:13px; font-weight:600; }
 .forecast-tile .rain { font-size:11px; opacity:0.8; font-weight: 500; }
 
 /* Status Badges */
 .status{ margin-top:6px; font-size:13px; color:var(--muted); display:flex; gap:8px; align-items:center; font-weight: 500; }
-.battery-badge, .humidity-badge { font-size: 14px; font-weight: 600; }
+.battery-badge { font-size: 14px; font-weight: 600; }
+.humidity-badge { font-size: 28px; font-weight: 600; }
 .battery-badge.battery-low { color: var(--warn); }
 .battery-badge.battery-crit { color: var(--hot); font-weight:bold; }
 .humidity-badge.humidity-bad { color: var(--warn); }
