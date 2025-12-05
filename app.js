@@ -283,6 +283,47 @@ const resizeObserver = new ResizeObserver(entries => {
   });
 });
 
+/* === AI INSIGHTS LOGIC === */
+async function loadAlmanacInsights() {
+  const container = document.getElementById('aiInsights');
+  if (!container) return;
+
+  container.innerHTML = '<div class="skeleton" style="height:16px; margin-bottom:6px; width:100%;"></div><div class="skeleton" style="height:16px; margin-bottom:6px; width:95%;"></div><div class="skeleton" style="height:16px; width:90%;"></div>';
+
+  try {
+    const res = await fetch('/api/almanac/insights');
+    if (!res.ok) {
+      container.innerHTML = '<div style="font-size:12px; color:var(--muted); font-style:italic;">Insights unavailable</div>';
+      return;
+    }
+
+    const data = await res.json();
+    const insights = data.insights || [];
+
+    if (insights.length === 0) {
+      container.innerHTML = '<div style="font-size:12px; color:var(--muted); font-style:italic;">No insights available</div>';
+      return;
+    }
+
+    let html = '';
+    insights.forEach(insight => {
+      html += `
+        <div class="ai-insight-item">
+          <svg class="icon" style="width:12px; height:12px; fill:var(--accent); flex-shrink:0; margin-top:2px;" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          <span>${insight}</span>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+  } catch (e) {
+    console.error("AI insights error", e);
+    container.innerHTML = '<div style="font-size:12px; color:var(--muted); font-style:italic;">Failed to load insights</div>';
+  }
+}
+
 /* === ALMANAC & HISTORY LOGIC === */
 async function loadAlmanac(weatherData) {
   // 1. Sun Cycle
@@ -536,8 +577,9 @@ async function loadWeather() {
     const hourly = data.hourly.temperature_2m.slice(0, 24).map(v => ({ val: v })); 
     drawSpark(elements.weather.canvas, hourly);
 
-    // Trigger Almanac
+    // Trigger Almanac & AI Insights
     loadAlmanac(data);
+    loadAlmanacInsights();
 
   } catch (e) {
     elements.weather.status.textContent = "Weather Unavailable";

@@ -236,3 +236,37 @@ h1{ margin:0; font-size:20px; font-weight:700; display:flex; align-items:center;
 .refresh-ring { display: none !important; } /* Hide old element */
 .spin { animation: spin 1s linear infinite; transform-origin: center; }
 @keyframes spin { 100% { transform: rotate(360deg); } }
+
+/* === AI INSIGHTS === */
+.ai-insights-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-insight-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  padding: 10px 12px;
+  background: rgba(96, 165, 250, 0.06);
+  border-left: 2px solid var(--accent);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.ai-insight-item:hover {
+  background: rgba(96, 165, 250, 0.1);
+  transform: translateX(2px);
+}
+
+[data-theme="light"] .ai-insight-item {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+[data-theme="light"] .ai-insight-item:hover {
+  background: rgba(37, 99, 235, 0.14);
+}
