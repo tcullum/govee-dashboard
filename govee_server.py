@@ -390,7 +390,7 @@ Return ONLY a JSON array of strings, like:
     try:
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
-            model="claude-3-sonnet-20240229",
+            model="claude-3-haiku-20240307",
             max_tokens=500,
             messages=[
                 {"role": "user", "content": prompt}
