@@ -109,11 +109,21 @@
         </div>
 
         <div id="aiInsightsContainer" style="margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,0.1);">
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-            <svg class="icon" style="width:16px; height:16px; fill:var(--accent);" viewBox="0 0 24 24">
-              <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
-            </svg>
-            <span style="font-size:11px; font-weight:600; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px;">AI Insights</span>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px; justify-content:space-between;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <svg class="icon" style="width:16px; height:16px; fill:var(--accent);" viewBox="0 0 24 24">
+                <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+              </svg>
+              <span style="font-size:11px; font-weight:600; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px;">AI Insights</span>
+            </div>
+            <div style="display:flex; gap:4px;">
+              <button class="btn icon-btn" id="fontSizeDown" title="Decrease font size" style="width:28px; height:28px; padding:0;">
+                <svg class="icon" style="width:14px; height:14px;" viewBox="0 0 24 24"><path d="M19 13H5v-2h14v2z"/></svg>
+              </button>
+              <button class="btn icon-btn" id="fontSizeUp" title="Increase font size" style="width:28px; height:28px; padding:0;">
+                <svg class="icon" style="width:14px; height:14px;" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+              </button>
+            </div>
           </div>
           <div id="aiInsights" class="ai-insights-list"></div>
         </div>

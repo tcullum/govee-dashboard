@@ -1,6 +1,7 @@
 /* === CONFIG & ICONS === */
 const THEME_KEY = 'goveeTheme';
 const COMPACT_KEY = 'goveeCompact';
+const FONT_SIZE_KEY = 'goveeFontSize';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 let unit = 'F'; // Default unit
@@ -88,13 +89,29 @@ function applyTheme(mode, persist = true) {
   if (persist) localStorage.setItem(THEME_KEY, mode);
 }
 
+function applyFontSize(size) {
+  const root = document.documentElement;
+  root.style.setProperty('--insight-font-size', size + 'px');
+  localStorage.setItem(FONT_SIZE_KEY, size);
+}
+
+function changeFontSize(delta) {
+  const currentSize = parseInt(localStorage.getItem(FONT_SIZE_KEY)) || 15;
+  const newSize = Math.max(12, Math.min(20, currentSize + delta)); // Min 12px, Max 20px
+  applyFontSize(newSize);
+}
+
 function initSettings() {
   const savedTheme = localStorage.getItem(THEME_KEY);
   const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
   applyTheme(savedTheme || (prefersLight ? 'light' : 'dark'), false);
 
   if (localStorage.getItem(COMPACT_KEY) === '1') document.body.classList.add('compact');
-  
+
+  // Initialize font size
+  const savedFontSize = parseInt(localStorage.getItem(FONT_SIZE_KEY)) || 15;
+  applyFontSize(savedFontSize);
+
   elements.buttons.themeDark.onclick = () => applyTheme('dark');
   elements.buttons.themeLight.onclick = () => applyTheme('light');
   elements.buttons.compact.onclick = () => {
@@ -105,6 +122,12 @@ function initSettings() {
        try { drawSpark(c, JSON.parse(c.dataset.series)); } catch {}
     });
   };
+
+  // Font size controls
+  const fontSizeUp = document.getElementById('fontSizeUp');
+  const fontSizeDown = document.getElementById('fontSizeDown');
+  if (fontSizeUp) fontSizeUp.onclick = () => changeFontSize(1);
+  if (fontSizeDown) fontSizeDown.onclick = () => changeFontSize(-1);
 }
 
 /* === INTERACTIVE CHARTING === */
