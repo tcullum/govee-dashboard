@@ -2,9 +2,10 @@
 const THEME_KEY = 'goveeTheme';
 const COMPACT_KEY = 'goveeCompact';
 const FONT_SIZE_KEY = 'goveeFontSize';
+const UNIT_KEY = 'goveeUnit';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
-let unit = 'F'; // Default unit
+let unit = localStorage.getItem(UNIT_KEY) || 'F'; // Default unit
 let autoTimer = null;
 
 // SVG Paths for Weather Codes
@@ -128,6 +129,20 @@ function initSettings() {
   const fontSizeDown = document.getElementById('fontSizeDown');
   if (fontSizeUp) fontSizeUp.onclick = () => changeFontSize(1);
   if (fontSizeDown) fontSizeDown.onclick = () => changeFontSize(-1);
+
+  // Insights refresh button
+  const refreshInsights = document.getElementById('refreshInsights');
+  if (refreshInsights) {
+    refreshInsights.onclick = () => {
+      const icon = refreshInsights.querySelector('.icon');
+      if (icon) icon.classList.add('spin');
+      loadAlmanacInsights(true).finally(() => {
+        setTimeout(() => {
+          if (icon) icon.classList.remove('spin');
+        }, 800);
+      });
+    };
+  }
 }
 
 /* === INTERACTIVE CHARTING === */
@@ -294,27 +309,49 @@ function drawSunPath(canvas, riseStr, setStr) {
   ctx.beginPath(); ctx.arc(sx, sy, 3, 0, Math.PI*2); ctx.fill();
 }
 
-// Resize Observer
+// Debounced Resize Observer
+let resizeTimeout;
 const resizeObserver = new ResizeObserver(entries => {
-  entries.forEach(entry => {
-    const canvas = entry.target;
-    if(canvas.id === 'sunCanvas') return; 
-    try {
-      const points = JSON.parse(canvas.dataset.series || '[]');
-      if (points.length) requestAnimationFrame(() => drawSpark(canvas, points));
-    } catch(e) {}
-  });
+  clearTimeout(resizeTimeout);
+  resizeTimeout = setTimeout(() => {
+    entries.forEach(entry => {
+      const canvas = entry.target;
+      if(canvas.id === 'sunCanvas') return;
+      try {
+        const points = JSON.parse(canvas.dataset.series || '[]');
+        if (points.length) requestAnimationFrame(() => drawSpark(canvas, points));
+      } catch(e) {}
+    });
+  }, 100); // 100ms debounce
 });
 
 /* === AI INSIGHTS LOGIC === */
-async function loadAlmanacInsights() {
+function getTimeAgo(timestamp) {
+  if (!timestamp) return '';
+  const now = new Date();
+  const then = new Date(timestamp);
+  const diffMs = now - then;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+
+  if (diffMins < 1) return 'Updated just now';
+  if (diffMins < 60) return `Updated ${diffMins} ${diffMins === 1 ? 'minute' : 'minutes'} ago`;
+  if (diffHours < 24) return `Updated ${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `Updated ${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
+}
+
+async function loadAlmanacInsights(forceRefresh = false) {
   const container = document.getElementById('aiInsights');
+  const timestampEl = document.getElementById('aiInsightsTimestamp');
   if (!container) return;
 
   container.innerHTML = '<div class="skeleton" style="height:16px; margin-bottom:6px; width:100%;"></div><div class="skeleton" style="height:16px; margin-bottom:6px; width:95%;"></div><div class="skeleton" style="height:16px; width:90%;"></div>';
+  if (timestampEl) timestampEl.textContent = '';
 
   try {
-    const res = await fetch('/api/almanac/insights');
+    const url = forceRefresh ? '/api/almanac/insights?refresh=1' : '/api/almanac/insights';
+    const res = await fetch(url);
     if (!res.ok) {
       container.innerHTML = '<div style="font-size:12px; color:var(--muted); font-style:italic;">Insights unavailable</div>';
       return;
@@ -341,6 +378,13 @@ async function loadAlmanacInsights() {
     });
 
     container.innerHTML = html;
+
+    // Update timestamp
+    if (timestampEl && data.timestamp) {
+      const timeAgo = getTimeAgo(data.timestamp);
+      const cacheStatus = data.cached ? ' (cached)' : ' (fresh)';
+      timestampEl.textContent = timeAgo + cacheStatus;
+    }
   } catch (e) {
     console.error("AI insights error", e);
     container.innerHTML = '<div style="font-size:12px; color:var(--muted); font-style:italic;">Failed to load insights</div>';
@@ -408,6 +452,7 @@ async function loadAlmanac(weatherData) {
 function renderSensors(data, history) {
   elements.count.textContent = data.items.length;
   const now = Date.now();
+  let alertCount = 0;
 
   const processedItems = data.items.map(item => {
     let tF = item.temp_f;
@@ -465,8 +510,16 @@ function renderSensors(data, history) {
     const minsAgo = lastTs ? (now - lastTs.getTime())/60000 : 0;
     const staleClass = minsAgo > 30 ? 'stale-card' : '';
 
-    card.className = `card sensor-card ${cls} ${staleClass}`;
-    
+    // Detect extreme conditions
+    let hasAlert = false;
+    if (item._tF && (item._tF < 60 || item._tF > 85)) hasAlert = true;
+    if (item.humidity && (item.humidity < 20 || item.humidity > 70)) hasAlert = true;
+    if (item.battery && item.battery < 15) hasAlert = true;
+    if (hasAlert) alertCount++;
+
+    const alertClass = hasAlert ? 'alert-card' : '';
+    card.className = `card sensor-card ${cls} ${staleClass} ${alertClass}`;
+
     card.querySelector('.name').textContent = item.name || 'Unnamed';
     card.querySelector('.device').textContent = item.device;
     card.querySelector('.temp').textContent = fmt(displayTemp, 1);
@@ -525,6 +578,17 @@ function renderSensors(data, history) {
   Array.from(elements.grid.children).forEach(c => {
     if (!activeIds.includes(c.dataset.device)) c.remove();
   });
+
+  // Update alert badge
+  const alertBadge = document.getElementById('alertCount');
+  if (alertBadge) {
+    if (alertCount > 0) {
+      alertBadge.textContent = `⚠ ${alertCount}`;
+      alertBadge.style.display = '';
+    } else {
+      alertBadge.style.display = 'none';
+    }
+  }
 }
 
 async function loadData() {
@@ -611,12 +675,42 @@ async function loadWeather() {
 
 /* === INIT === */
 initSettings();
+
+// Initialize unit buttons based on saved preference
+elements.buttons.unitF.classList.toggle('active', unit === 'F');
+elements.buttons.unitC.classList.toggle('active', unit === 'C');
+
 loadData();
 loadWeather();
-setInterval(loadData, 20000);
+setInterval(loadData, 60000); // Reduced from 20s to 60s
 setInterval(loadWeather, 900000);
 
+// Export function
+function exportData() {
+  // Create a link to download the CSV file
+  const link = document.createElement('a');
+  link.href = '/govee_readings.csv';
+  link.download = `govee_readings_${new Date().toISOString().split('T')[0]}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 // Event Listeners
+const exportBtn = document.getElementById('exportBtn');
+if (exportBtn) exportBtn.onclick = exportData;
 elements.buttons.refresh.onclick = loadData;
-elements.buttons.unitF.onclick = () => { unit='F'; elements.buttons.unitF.classList.add('active'); elements.buttons.unitC.classList.remove('active'); loadData(); };
-elements.buttons.unitC.onclick = () => { unit='C'; elements.buttons.unitC.classList.add('active'); elements.buttons.unitF.classList.remove('active'); loadData(); };
+elements.buttons.unitF.onclick = () => {
+  unit='F';
+  localStorage.setItem(UNIT_KEY, 'F');
+  elements.buttons.unitF.classList.add('active');
+  elements.buttons.unitC.classList.remove('active');
+  loadData();
+};
+elements.buttons.unitC.onclick = () => {
+  unit='C';
+  localStorage.setItem(UNIT_KEY, 'C');
+  elements.buttons.unitC.classList.add('active');
+  elements.buttons.unitF.classList.remove('active');
+  loadData();
+};

@@ -99,6 +99,17 @@ body{
   opacity: 1;
 }
 
+/* Alert Visual */
+.sensor-card.alert-card {
+  border: 2px solid var(--warn);
+  box-shadow: 0 0 20px rgba(251, 191, 36, 0.3);
+  animation: pulse-border 2s ease-in-out infinite;
+}
+@keyframes pulse-border {
+  0%, 100% { box-shadow: 0 0 20px rgba(251, 191, 36, 0.3); }
+  50% { box-shadow: 0 0 30px rgba(251, 191, 36, 0.5); }
+}
+
 /* Layout */
 .dash-layout {
   display: grid;

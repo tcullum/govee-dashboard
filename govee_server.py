@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any
 from collections import deque
 
-from flask import Flask, jsonify, send_from_directory, Response
+from flask import Flask, jsonify, send_from_directory, Response, request
 import requests
 import anthropic
 
@@ -294,11 +294,12 @@ def api_almanac():
 def api_almanac_insights():
     """Generate AI insights using Claude based on almanac, weather, and sensor data."""
 
-    # 1. Check Cache
+    # 1. Check Cache (unless force refresh requested)
     now = datetime.now()
     cache = {}
+    force_refresh = request.args.get('refresh') == '1'
 
-    if os.path.exists(INSIGHTS_CACHE_FILE):
+    if not force_refresh and os.path.exists(INSIGHTS_CACHE_FILE):
         try:
             with open(INSIGHTS_CACHE_FILE, 'r') as f:
                 cache = json.load(f)
@@ -308,7 +309,11 @@ def api_almanac_insights():
 
             if age_hours < INSIGHTS_CACHE_HOURS:
                 log("Using cached insights")
-                return jsonify({"insights": cache.get("insights", []), "cached": True})
+                return jsonify({
+                    "insights": cache.get("insights", []),
+                    "cached": True,
+                    "timestamp": cache.get("timestamp")
+                })
         except Exception as e:
             log(f"Insights cache read error: {e}")
 
@@ -431,7 +436,11 @@ Return ONLY a JSON array of strings, like:
         log(f"Failed to cache insights: {e}")
 
     log(f"Generated {len(insights)} insights")
-    return jsonify({"insights": insights, "cached": False})
+    return jsonify({
+        "insights": insights,
+        "cached": False,
+        "timestamp": now.isoformat()
+    })
 
 # ---------------------------------------------------------------------
 # RUN SERVER
