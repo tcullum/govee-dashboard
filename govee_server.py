@@ -350,11 +350,19 @@ def api_almanac_insights():
     history = almanac_data.get("history", [])
 
     # Indoor sensor summary
-    indoor_temps = [s.get("temp_c") for s in sensor_data.get("items", []) if s.get("temp_c")]
+    indoor_temps_f = []
+    for s in sensor_data.get("items", []):
+        temp_c = s.get("temp_c")
+        if temp_c is not None:
+            # Fix glitch: if temp_c is in range 40-120, it's actually Fahrenheit
+            if 40 < temp_c < 120:
+                indoor_temps_f.append(temp_c)  # Already in Fahrenheit
+            else:
+                indoor_temps_f.append((temp_c * 9/5) + 32)  # Convert to Fahrenheit
+
     indoor_humidities = [s.get("humidity") for s in sensor_data.get("items", []) if s.get("humidity")]
 
-    avg_indoor_c = sum(indoor_temps) / len(indoor_temps) if indoor_temps else None
-    avg_indoor_f = (avg_indoor_c * 9/5) + 32 if avg_indoor_c else None
+    avg_indoor_f = sum(indoor_temps_f) / len(indoor_temps_f) if indoor_temps_f else None
     avg_indoor_humidity = sum(indoor_humidities) / len(indoor_humidities) if indoor_humidities else None
 
     date_str = now.strftime("%B %d, %Y")
@@ -371,7 +379,7 @@ HISTORICAL DATA (10-year average for this date):
 - Recent years: {history[:5]}
 
 INDOOR SENSORS:
-- Average indoor temp: {avg_indoor_f:.1f}°F ({len(indoor_temps)} sensors)
+- Average indoor temp: {avg_indoor_f:.1f}°F ({len(indoor_temps_f)} sensors)
 - Average indoor humidity: {avg_indoor_humidity:.0f}%
 - Sensor count: {len(sensor_data.get("items", []))}
 
