@@ -8,8 +8,9 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any
 from collections import deque
 
-from flask import Flask, jsonify, send_from_directory, Response
+from flask import Flask, jsonify, send_from_directory, Response, request
 import requests
+import anthropic
 
 # ---------------------------------------------------------------------
 # CONFIG
@@ -18,6 +19,8 @@ BASE_URL = "https://openapi.api.govee.com/router/api/v1"
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(HERE, "govee_readings.csv")
 ALMANAC_CACHE_FILE = os.path.join(HERE, "almanac_cache.json")
+INSIGHTS_CACHE_FILE = os.path.join(HERE, "insights_cache.json")
+INSIGHTS_CACHE_HOURS = 6
 
 # ---------------------------------------------------------------------
 # FLASK APP
@@ -304,6 +307,158 @@ def api_almanac():
 
     log(f"Returning almanac data: avg_high={payload['avg_high']}°F, avg_low={payload['avg_low']}°F")
     return jsonify(payload)
+
+@app.get("/api/almanac/insights")
+def api_almanac_insights():
+    """Generate AI insights using Claude based on almanac, weather, and sensor data."""
+
+    # 1. Check Cache (unless force refresh requested)
+    now = datetime.now()
+    cache = {}
+    force_refresh = request.args.get('refresh') == '1'
+
+    if not force_refresh and os.path.exists(INSIGHTS_CACHE_FILE):
+        try:
+            with open(INSIGHTS_CACHE_FILE, 'r') as f:
+                cache = json.load(f)
+
+            cache_time = datetime.fromisoformat(cache.get("timestamp", "2000-01-01T00:00:00"))
+            age_hours = (now - cache_time).total_seconds() / 3600
+
+            if age_hours < INSIGHTS_CACHE_HOURS:
+                log("Using cached insights")
+                return jsonify({
+                    "insights": cache.get("insights", []),
+                    "cached": True,
+                    "timestamp": cache.get("timestamp")
+                })
+        except Exception as e:
+            log(f"Insights cache read error: {e}")
+
+    # 2. Check for API Key
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 500
+
+    log("Generating fresh AI insights...")
+
+    # 3. Gather Context Data
+    try:
+        # Get almanac data
+        almanac_response = api_almanac()
+        almanac_data = almanac_response.get_json() if hasattr(almanac_response, 'get_json') else {}
+
+        # Get current weather from Open-Meteo
+        lat, lon = 36.17, -115.14
+        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,weathercode&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&temperature_unit=fahrenheit&forecast_days=3&timezone=auto"
+        weather_data = requests.get(weather_url, timeout=10).json()
+
+        # Get sensor readings
+        readings_response = api_readings()
+        sensor_data = readings_response.get_json() if hasattr(readings_response, 'get_json') else {"items": []}
+
+    except Exception as e:
+        log(f"Error gathering context: {e}")
+        return jsonify({"error": "Failed to gather context data"}), 500
+
+    # 4. Build Prompt
+    current_temp = weather_data.get("current", {}).get("temperature_2m", "N/A")
+    current_humidity = weather_data.get("current", {}).get("relative_humidity_2m", "N/A")
+
+    today_high = weather_data.get("daily", {}).get("temperature_2m_max", [None])[0]
+    today_low = weather_data.get("daily", {}).get("temperature_2m_min", [None])[0]
+
+    avg_high = almanac_data.get("avg_high", "N/A")
+    avg_low = almanac_data.get("avg_low", "N/A")
+    history = almanac_data.get("history", [])
+
+    # Indoor sensor summary
+    indoor_temps_f = []
+    for s in sensor_data.get("items", []):
+        temp_c = s.get("temp_c")
+        if temp_c is not None:
+            # Fix glitch: if temp_c is in range 40-120, it's actually Fahrenheit
+            if 40 < temp_c < 120:
+                indoor_temps_f.append(temp_c)  # Already in Fahrenheit
+            else:
+                indoor_temps_f.append((temp_c * 9/5) + 32)  # Convert to Fahrenheit
+
+    indoor_humidities = [s.get("humidity") for s in sensor_data.get("items", []) if s.get("humidity")]
+
+    avg_indoor_f = sum(indoor_temps_f) / len(indoor_temps_f) if indoor_temps_f else None
+    avg_indoor_humidity = sum(indoor_humidities) / len(indoor_humidities) if indoor_humidities else None
+
+    date_str = now.strftime("%B %d, %Y")
+
+    prompt = f"""You are analyzing weather and environmental data for {date_str}.
+
+OUTDOOR WEATHER:
+- Current: {current_temp}°F, {current_humidity}% humidity
+- Today's forecast: High {today_high}°F, Low {today_low}°F
+
+HISTORICAL DATA (10-year average for this date):
+- Average High: {avg_high}°F
+- Average Low: {avg_low}°F
+- Recent years: {history[:5]}
+
+INDOOR SENSORS:
+- Average indoor temp: {avg_indoor_f:.1f}°F ({len(indoor_temps_f)} sensors)
+- Average indoor humidity: {avg_indoor_humidity:.0f}%
+- Sensor count: {len(sensor_data.get("items", []))}
+
+Generate 3-4 concise, actionable insights as a JSON array. Each insight should be a brief sentence (max 120 characters) highlighting interesting patterns, comparisons, or recommendations.
+
+Focus on:
+1. How today compares to historical averages
+2. Indoor vs outdoor conditions
+3. Comfort recommendations or notable trends
+4. Seasonal context
+
+Return ONLY a JSON array of strings, like:
+["Insight 1 here", "Insight 2 here", "Insight 3 here"]"""
+
+    # 5. Call Claude API
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=500,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        response_text = message.content[0].text
+
+        # Parse JSON response
+        insights = json.loads(response_text)
+
+        if not isinstance(insights, list):
+            insights = [response_text]
+
+    except json.JSONDecodeError as e:
+        log(f"JSON parse error: {e}")
+        insights = ["Unable to generate insights at this time."]
+    except Exception as e:
+        log(f"Claude API error: {e}")
+        return jsonify({"error": f"AI generation failed: {str(e)}"}), 500
+
+    # 6. Cache the results
+    try:
+        with open(INSIGHTS_CACHE_FILE, 'w') as f:
+            json.dump({
+                "timestamp": now.isoformat(),
+                "insights": insights
+            }, f)
+    except Exception as e:
+        log(f"Failed to cache insights: {e}")
+
+    log(f"Generated {len(insights)} insights")
+    return jsonify({
+        "insights": insights,
+        "cached": False,
+        "timestamp": now.isoformat()
+    })
 
 # ---------------------------------------------------------------------
 # RUN SERVER
