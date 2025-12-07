@@ -293,29 +293,42 @@ async function loadAlmanac(weatherData) {
   }
 
   // 2. Almanac Stats
+  const elHigh = document.getElementById('almHigh');
+  const elLow = document.getElementById('almLow');
+  const elDelta = document.getElementById('almDelta');
+  const histContainer = document.getElementById('almHistory');
+
+  // Show loading state
+  if(elHigh) elHigh.innerHTML = '<span style="opacity:0.5">...</span>';
+  if(elLow) elLow.innerHTML = '<span style="opacity:0.5">...</span>';
+  if(elDelta) elDelta.innerHTML = '<span style="opacity:0.5">Loading...</span>';
+
   try {
-    const res = await fetch('/api/almanac');
-    if (!res.ok) return;
+    const res = await fetch('/api/almanac', { timeout: 20000 });
+
+    if (!res.ok) {
+      throw new Error(`API returned ${res.status}`);
+    }
+
     const hist = await res.json();
 
-    const elHigh = document.getElementById('almHigh');
-    const elLow = document.getElementById('almLow');
-    const elDelta = document.getElementById('almDelta');
+    if (hist.error || !hist.avg_high || !hist.avg_low) {
+      throw new Error('Invalid almanac data');
+    }
 
     if(elHigh) elHigh.textContent = Math.round(hist.avg_high);
     if(elLow) elLow.textContent = Math.round(hist.avg_low);
 
     const todayHigh = weatherData.daily.temperature_2m_max[0];
     const diff = todayHigh - hist.avg_high;
-    
+
     const pct = ((diff / hist.avg_high) * 100).toFixed(1);
     const sign = diff > 0 ? '+' : '';
     const color = diff > 0 ? '#fbbf24' : '#3b82f6';
-    
+
     if(elDelta) elDelta.innerHTML = `<span style="color:${color}">${sign}${Math.round(diff)}°F <span style="opacity:0.7; font-size:11px">(${sign}${pct}%)</span></span>`;
 
     // 3. Render History Grid
-    const histContainer = document.getElementById('almHistory');
     if (histContainer && hist.history) {
         let html = '<div class="hist-grid">';
         hist.history.forEach(item => {
@@ -336,7 +349,18 @@ async function loadAlmanac(weatherData) {
     }
 
   } catch (e) {
-    console.error("Almanac error", e);
+    console.error("Almanac error:", e);
+
+    // Show error state with user-friendly message
+    if(elHigh) elHigh.innerHTML = '<span style="opacity:0.5">--</span>';
+    if(elLow) elLow.innerHTML = '<span style="opacity:0.5">--</span>';
+    if(elDelta) elDelta.innerHTML = '<span style="opacity:0.5; font-size:11px">Historical data unavailable</span>';
+
+    if(histContainer) {
+      histContainer.innerHTML = `<div style="text-align:center; padding:12px; opacity:0.5; font-size:11px;">
+        Unable to load historical climate data. This may be due to a network issue or API timeout.
+      </div>`;
+    }
   }
 }
 
