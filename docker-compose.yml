@@ -9,6 +9,7 @@
       GOVEE_API_KEY: ${GOVEE_API_KEY}
       NOAA_TOKEN: ${NOAA_TOKEN}
       PORT: ${PORT}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
     volumes:
       - ./:/app
     restart: unless-stopped
