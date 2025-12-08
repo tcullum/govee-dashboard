@@ -20,7 +20,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(HERE, "govee_readings.csv")
 ALMANAC_CACHE_FILE = os.path.join(HERE, "almanac_cache.json")
 INSIGHTS_CACHE_FILE = os.path.join(HERE, "insights_cache.json")
-INSIGHTS_CACHE_HOURS = 6
+INSIGHTS_CACHE_HOURS = 24  # Cache for 24 hours so insights refresh daily
 
 # ---------------------------------------------------------------------
 # FLASK APP
@@ -325,13 +325,23 @@ def api_almanac_insights():
             cache_time = datetime.fromisoformat(cache.get("timestamp", "2000-01-01T00:00:00"))
             age_hours = (now - cache_time).total_seconds() / 3600
 
-            if age_hours < INSIGHTS_CACHE_HOURS:
+            # Invalidate cache if date has changed (new day) OR if older than 24 hours
+            cache_date = cache_time.date()
+            current_date = now.date()
+            is_same_day = cache_date == current_date
+
+            if is_same_day and age_hours < INSIGHTS_CACHE_HOURS:
                 log("Using cached insights")
                 return jsonify({
                     "insights": cache.get("insights", []),
                     "cached": True,
                     "timestamp": cache.get("timestamp")
                 })
+            else:
+                if not is_same_day:
+                    log(f"Cache is from {cache_date}, today is {current_date} - regenerating insights")
+                else:
+                    log(f"Cache is {age_hours:.1f} hours old - regenerating insights")
         except Exception as e:
             log(f"Insights cache read error: {e}")
 
