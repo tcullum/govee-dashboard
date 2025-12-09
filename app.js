@@ -346,14 +346,28 @@ async function loadAlmanacInsights(forceRefresh = false) {
   const timestampEl = document.getElementById('aiInsightsTimestamp');
   if (!container) return;
 
+  // Save scroll position and container height to prevent scroll jump
+  const scrollY = window.scrollY;
+  const containerHeight = container.offsetHeight;
+
+  // Set min-height to prevent layout shift during loading
+  if (containerHeight > 0) {
+    container.style.minHeight = `${containerHeight}px`;
+  }
+
   container.innerHTML = '<div class="skeleton" style="height:16px; margin-bottom:6px; width:100%;"></div><div class="skeleton" style="height:16px; margin-bottom:6px; width:95%;"></div><div class="skeleton" style="height:16px; width:90%;"></div>';
   if (timestampEl) timestampEl.textContent = '';
+
+  // Restore scroll position after DOM update
+  window.scrollTo(0, scrollY);
 
   try {
     const url = forceRefresh ? '/api/almanac/insights?refresh=1' : '/api/almanac/insights';
     const res = await fetch(url);
     if (!res.ok) {
       container.innerHTML = '<div style="font-size:12px; color:var(--muted); font-style:italic;">Insights unavailable</div>';
+      container.style.minHeight = '';
+      window.scrollTo(0, scrollY);
       return;
     }
 
@@ -362,6 +376,8 @@ async function loadAlmanacInsights(forceRefresh = false) {
 
     if (insights.length === 0) {
       container.innerHTML = '<div style="font-size:12px; color:var(--muted); font-style:italic;">No insights available</div>';
+      container.style.minHeight = '';
+      window.scrollTo(0, scrollY);
       return;
     }
 
@@ -385,9 +401,15 @@ async function loadAlmanacInsights(forceRefresh = false) {
       const cacheStatus = data.cached ? ' (cached)' : ' (fresh)';
       timestampEl.textContent = timeAgo + cacheStatus;
     }
+
+    // Clear min-height and restore scroll position after rendering
+    container.style.minHeight = '';
+    window.scrollTo(0, scrollY);
   } catch (e) {
     console.error("AI insights error", e);
     container.innerHTML = '<div style="font-size:12px; color:var(--muted); font-style:italic;">Failed to load insights</div>';
+    container.style.minHeight = '';
+    window.scrollTo(0, scrollY);
   }
 }
 
