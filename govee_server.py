@@ -445,6 +445,10 @@ def api_almanac_insights():
 
     date_str = now.strftime("%B %d, %Y")
 
+    # Format indoor sensor data for prompt (handle None values)
+    indoor_temp_str = f"{avg_indoor_f:.1f}°F" if avg_indoor_f is not None else "N/A"
+    indoor_humidity_str = f"{avg_indoor_humidity:.0f}%" if avg_indoor_humidity is not None else "N/A"
+
     prompt = f"""You are analyzing weather and environmental data for {date_str}.
 
 OUTDOOR WEATHER:
@@ -457,8 +461,8 @@ HISTORICAL DATA (10-year average for this date):
 - Recent years: {history[:5]}
 
 INDOOR SENSORS:
-- Average indoor temp: {avg_indoor_f:.1f}°F ({len(indoor_temps_f)} sensors)
-- Average indoor humidity: {avg_indoor_humidity:.0f}%
+- Average indoor temp: {indoor_temp_str} ({len(indoor_temps_f)} sensors)
+- Average indoor humidity: {indoor_humidity_str}
 - Sensor count: {len(sensor_data.get("items", []))}
 
 Generate 3-4 concise, actionable insights as a JSON array. Each insight should be a brief sentence (max 120 characters) highlighting interesting patterns, comparisons, or recommendations.
