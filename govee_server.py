@@ -382,9 +382,20 @@ def api_almanac_insights():
     avg_low = almanac_data.get("avg_low", "N/A")
     history = almanac_data.get("history", [])
 
-    # Indoor sensor summary
+    # Indoor sensor summary - Filter out outdoor sensors
+    OUTDOOR_KEYWORDS = ['backyard', 'outdoor', 'outside', 'patio', 'porch', 'deck', 'garage', 'yard', 'garden', 'shed']
+
     indoor_temps_f = []
+    indoor_humidities = []
+
     for s in sensor_data.get("items", []):
+        sensor_name = (s.get("name") or "").lower()
+
+        # Skip outdoor sensors
+        is_outdoor = any(keyword in sensor_name for keyword in OUTDOOR_KEYWORDS)
+        if is_outdoor:
+            continue
+
         temp_c = s.get("temp_c")
         if temp_c is not None:
             # Fix glitch: if temp_c is in range 40-120, it's actually Fahrenheit
@@ -393,7 +404,9 @@ def api_almanac_insights():
             else:
                 indoor_temps_f.append((temp_c * 9/5) + 32)  # Convert to Fahrenheit
 
-    indoor_humidities = [s.get("humidity") for s in sensor_data.get("items", []) if s.get("humidity")]
+        humidity = s.get("humidity")
+        if humidity is not None:
+            indoor_humidities.append(humidity)
 
     avg_indoor_f = sum(indoor_temps_f) / len(indoor_temps_f) if indoor_temps_f else None
     avg_indoor_humidity = sum(indoor_humidities) / len(indoor_humidities) if indoor_humidities else None
