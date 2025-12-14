@@ -55,7 +55,7 @@ def get_headers() -> Dict[str, str]:
 
 def fetch_devices() -> List[Dict[str, Any]]:
     try:
-        r = requests.get(f"{BASE_URL}/user/devices", headers=get_headers(), timeout=10)
+        r = requests.get(f"{BASE_URL}/user/devices", headers=get_headers(), timeout=30)
         r.raise_for_status()
         return r.json().get("data", [])
     except Exception as e:
@@ -65,7 +65,7 @@ def fetch_devices() -> List[Dict[str, Any]]:
 def get_state(sku: str, device: str) -> Dict[str, Any]:
     payload = {"requestId": "local-dashboard", "payload": {"sku": sku, "device": device}}
     try:
-        r = requests.post(f"{BASE_URL}/device/state", headers=get_headers(), json=payload, timeout=10)
+        r = requests.post(f"{BASE_URL}/device/state", headers=get_headers(), json=payload, timeout=30)
         r.raise_for_status()
         return r.json()
     except Exception as e:
