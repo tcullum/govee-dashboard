@@ -10,7 +10,6 @@
       NOAA_TOKEN: ${NOAA_TOKEN}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       PORT: ${PORT}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
     volumes:
       - ./:/app
     restart: unless-stopped
