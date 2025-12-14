@@ -27,3 +27,5 @@ Thumbs.db
 *.swp
 *.swo
 insights_cache.json
+almanac_cache.json
+govee_readings.csv
