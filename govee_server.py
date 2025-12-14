@@ -197,12 +197,18 @@ def _fetch_sensor_data(sensor, ts):
 
 @app.get("/api/readings")
 def api_readings():
+    import time as time_module
+    start_time = time_module.time()
+
     try:
         devices = fetch_devices()
     except Exception as e:
+        log(f"ERROR: Failed to fetch devices: {e}")
         return jsonify({"items": [], "error": str(e)}), 500
 
     sensors = _collect_sensor_devices(devices)
+    log(f"Found {len(sensors)} sensors to poll")
+
     ts = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
     items = []
     errs = []
@@ -217,6 +223,13 @@ def api_readings():
                 items.append(item)
             if error:
                 errs.append(error)
+
+    elapsed = time_module.time() - start_time
+    log(f"API /api/readings completed in {elapsed:.2f}s - {len(items)} sensors, {len(errs)} errors")
+
+    if len(items) == 0 and len(errs) > 0:
+        log(f"WARNING: All sensors failed! Errors: {errs}")
+        return jsonify({"items": [], "error": "All sensors failed", "note": "; ".join(errs[:3])}), 500
 
     return jsonify({"items": items, "note": (" | ".join(errs) if errs else "")})
 

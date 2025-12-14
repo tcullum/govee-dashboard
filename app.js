@@ -647,16 +647,35 @@ async function loadData() {
     const [rRead, rHist] = await Promise.all([
       fetch('/api/readings'), fetch('/api/history')
     ]);
+
+    // Check if API calls succeeded
+    if (!rRead.ok) {
+      throw new Error(`Readings API failed: ${rRead.status}`);
+    }
+
     const readings = await rRead.json();
     const history = await rHist.json();
-    renderSensors(readings, history.series || {});
-    
+
+    // Only render if we have data - prevents panels from disappearing on empty response
+    if (readings && readings.items && readings.items.length > 0) {
+      renderSensors(readings, history.series || {});
+      elements.notice.textContent = ""; // Clear any error message
+    } else {
+      console.warn("API returned empty sensor data - preserving existing panels");
+      elements.notice.textContent = "⚠ No sensor data received";
+    }
+
     setTimeout(() => {
         if (refreshIcon) refreshIcon.classList.remove('spin');
     }, 800); // Min spin time to feel responsive
 
   } catch (e) {
-    elements.notice.textContent = "Offline / API Error";
+    console.error("loadData error:", e);
+    elements.notice.textContent = `⚠ API Error: ${e.message}`;
+
+    // Stop refresh animation even on error
+    const refreshIcon = elements.buttons.refresh.querySelector('.icon');
+    if (refreshIcon) refreshIcon.classList.remove('spin');
   }
 }
 
