@@ -7,6 +7,7 @@ import os, csv, json, time, sys
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from flask import Flask, jsonify, send_from_directory, Response, request
 import requests
@@ -152,6 +153,48 @@ def _read_history(limit_per_device: int = 100):
 # ---------------------------------------------------------------------
 # API ROUTES
 # ---------------------------------------------------------------------
+def _fetch_sensor_data(sensor, ts):
+    """Fetch data for a single sensor (used for parallel execution)"""
+    try:
+        st = get_state(sensor["sku"], sensor["device"])
+        caps = st.get("payload", {}).get("capabilities", [])
+
+        raw_temp = None
+        raw_hum = None
+        for c in caps:
+            inst = c.get("instance")
+            val = None
+            st_dict = c.get("state")
+            if isinstance(st_dict, dict) and "value" in st_dict:
+                val = st_dict["value"]
+            elif "value" in c:
+                val = c["value"]
+            if inst == "sensorTemperature": raw_temp = val
+            if inst == "sensorHumidity": raw_hum = val
+
+        temp_c = normalize_temp_c_from_raw(raw_temp)
+        humidity = normalize_humidity(raw_hum)
+
+        # Debug logging for blank temps
+        if temp_c is None and raw_temp is not None:
+            log(f"WARNING: {sensor['name']} - Temperature normalization failed. Raw value: {raw_temp}")
+
+        item = {
+            "name": sensor["name"],
+            "sku": sensor["sku"],
+            "device": sensor["device"],
+            "temp_c": temp_c,
+            "temp_f": None,
+            "humidity": humidity,
+            "battery": next((c["state"]["value"] for c in caps if c.get("instance")=="battery" and "state" in c), None),
+            "timestamp": ts
+        }
+        _append_log_row(ts, sensor["name"], sensor["device"], temp_c, humidity)
+        return item, None
+    except Exception as e:
+        log(f"ERROR fetching {sensor['name']}: {e}")
+        return None, f"{sensor['name']}: {e}"
+
 @app.get("/api/readings")
 def api_readings():
     try:
@@ -164,40 +207,16 @@ def api_readings():
     items = []
     errs = []
 
-    for s in sensors:
-        try:
-            st = get_state(s["sku"], s["device"])
-            caps = st.get("payload", {}).get("capabilities", [])
-            
-            raw_temp = None
-            raw_hum = None
-            for c in caps:
-                inst = c.get("instance")
-                val = None
-                st_dict = c.get("state")
-                if isinstance(st_dict, dict) and "value" in st_dict:
-                    val = st_dict["value"]
-                elif "value" in c:
-                    val = c["value"]
-                if inst == "sensorTemperature": raw_temp = val
-                if inst == "sensorHumidity": raw_hum = val
+    # Parallel API calls for much faster response
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(_fetch_sensor_data, s, ts): s for s in sensors}
 
-            temp_c = normalize_temp_c_from_raw(raw_temp)
-            humidity = normalize_humidity(raw_hum)
-
-            items.append({
-                "name": s["name"],
-                "sku": s["sku"],
-                "device": s["device"],
-                "temp_c": temp_c,
-                "temp_f": None, 
-                "humidity": humidity,
-                "battery": next((c["state"]["value"] for c in caps if c.get("instance")=="battery" and "state" in c), None),
-                "timestamp": ts
-            })
-            _append_log_row(ts, s["name"], s["device"], temp_c, humidity)
-        except Exception as e:
-            errs.append(f"{s['name']}: {e}")
+        for future in as_completed(futures):
+            item, error = future.result()
+            if item:
+                items.append(item)
+            if error:
+                errs.append(error)
 
     return jsonify({"items": items, "note": (" | ".join(errs) if errs else "")})
 
