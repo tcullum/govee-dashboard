@@ -4,6 +4,8 @@ A local-first dashboard for Govee temperature/humidity sensors with live indoor 
 
 The app is built as a small Flask server plus a static browser UI. It is designed to run well in Docker on a home server, NAS, or desktop.
 
+![Govee Dashboard desktop screenshot](docs/screenshot-desktop.png)
+
 ## Features
 
 - Live Govee sensor readings with history sparklines
