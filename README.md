@@ -191,4 +191,4 @@ If weather warnings look wrong:
 
 ## License
 
-No license has been specified yet. Add one before distributing or accepting external contributions.
+MIT License. See [LICENSE](LICENSE).
