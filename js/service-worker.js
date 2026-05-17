@@ -1,4 +1,4 @@
-const CACHE_NAME = "govee-dashboard-v1";
+const CACHE_NAME = "govee-dashboard-v7";
 const ASSETS = [
   "/",
   "/index.html",

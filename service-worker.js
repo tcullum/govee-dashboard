@@ -1,9 +1,11 @@
 // service-worker.js — Clean version for Temp Spark v3 (Enhanced)
 
-const CACHE_NAME = "temp-spark-v3.1"; // bump version when you update files
+const CACHE_NAME = "temp-spark-v3.7"; // bump version when you update files
 const STATIC_ASSETS = [
   "./",
   "./index.html",
+  "./app.js",
+  "./style.css",
   "./manifest.json",
   "./favicon.ico",
   "./favicon-16x16.png",

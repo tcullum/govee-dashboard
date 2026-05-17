@@ -3,21 +3,20 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>House & Local Weather</title>
+  <title>House Weather</title>
 
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="manifest" href="manifest.json">
-  
   <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-<header>
-  <h1>Govee Sensors <span class="chip" id="count">0</span></h1>
+<header class="app-header">
+  <h1><span class="app-title-full">House Weather</span><span class="app-title-short">House</span> <span class="chip" id="count">0</span><span class="chip freshness-chip" id="readingsFreshness">Loading</span><span class="chip alert-chip" id="alertCount" style="display:none;">Attention 0</span></h1>
   <div class="controls" id="toolbar">
     <div class="unit-toggle">
-      <button id="unitF" class="btn active">°F</button>
-      <button id="unitC" class="btn">°C</button>
+      <button id="unitF" class="btn active" title="Fahrenheit">F</button>
+      <button id="unitC" class="btn" title="Celsius">C</button>
     </div>
 
     <div class="theme-toggle">
@@ -29,88 +28,174 @@
       </button>
     </div>
 
-    <button class="btn icon-btn" id="compactToggleBtn" title="Compact"><svg class="icon" viewBox="0 0 24 24"><path d="M4 5h16a1 1 0 0 1 0 2H4a1 1 0 1 1 0-2Zm0 6h12a1 1 0 1 1 0 2H4a1 1 0 1 1 0-2Zm0 6h16a1 1 0 1 1 0 2H4a1 1 0 1 1 0-2Z"/></svg></button>
-    <button class="btn icon-btn" id="reorderToggleBtn" title="Reorder"><svg class="icon" viewBox="0 0 24 24"><path d="M3 7h14a1 1 0 1 0 0-2H3a1 1 0 1 0 0 2Zm0 6h10a1 1 0 1 0 0-2H3a1 1 0 1 0 0 2Zm0 6h14a1 1 0 1 0 0-2H3a1 1 0 1 0 0 2Z"/></svg></button>
-
-    <button class="btn icon-btn refresh-wrapper" id="refreshBtn" title="Refresh">
-      <svg class="icon" viewBox="0 0 24 24"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L7 6l5 5V7c2.76 0 5 2.24 5 5a5 5 0 1 1-8.66-3.54 1 1 0 1 0-1.41-1.42A7 7 0 1 0 19 12a6.98 6.98 0 0 0-1.35-5.65Z"/></svg>
-      <div class="refresh-ring"></div>
-    </button>
-    
-    <button class="btn icon-btn" id="resetOrderBtn" title="Reset"><svg class="icon" viewBox="0 0 24 24"><path d="M19 7v6a1 1 0 0 1-1 1H8.41l2.3 2.29a1 1 0 1 1-1.42 1.42l-4-4a1 1 0 0 1 0-1.42l4-4a1 1 0 1 1 1.42 1.42L8.41 12H17V7a1 1 0 1 1 2 0Z"/></svg></button>
+    <button class="btn icon-btn" id="compactToggleBtn" title="Compact layout"><svg class="icon" viewBox="0 0 24 24"><path d="M4 7h6v6H4V7Zm10 0h6v6h-6V7ZM4 15h6v2H4v-2Zm10 0h6v2h-6v-2Z"/></svg></button>
+    <button class="btn icon-btn" id="exportBtn" title="Export CSV"><svg class="icon" viewBox="0 0 24 24"><path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z"/></svg></button>
   </div>
 </header>
 
 <main>
-  <div id="notice" class="status"></div>
+  <div id="notice" class="notice"></div>
+
+  <section class="alert-banner" id="alertBanner" hidden>
+    <div class="alert-icon">!</div>
+    <div>
+      <h2 id="alertTitle">House looks stable</h2>
+      <p id="alertBody">Waiting for live readings.</p>
+    </div>
+    <div class="alert-pills" id="alertPills"></div>
+  </section>
 
   <div class="dash-layout">
-    <div class="sensor-column">
-      <div class="grid" id="grid"></div>
-    </div>
+    <div class="location-strip" id="locationStrip"></div>
 
-    <div class="weather-column">
-      <div class="card" id="weatherCard">
-        <div class="toprow">
-          <div class="title">
-            <div class="name">Local Weather</div>
+    <section class="weather-column">
+      <div class="card weather-card" id="weatherCard">
+        <div class="weather-stars" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <div class="weather-clouds" aria-hidden="true">
+          <span class="cloud-wisp cloud-wisp-a"></span>
+          <span class="cloud-wisp cloud-wisp-b"></span>
+          <span class="cloud-wisp cloud-wisp-c"></span>
+        </div>
+        <div class="weather-topline">
+          <div>
+            <div class="section-kicker">Local Weather</div>
             <div class="device skeleton" id="weatherLocation">Detecting location...</div>
           </div>
+          <div id="weatherCondition" class="condition-chip skeleton">Loading</div>
         </div>
 
         <div class="weather-reading">
           <div class="temp-wrap">
-            <span class="temp skeleton" id="weatherTemp">—</span>
-            <span class="unit">°F</span>
+            <span class="temp skeleton" id="weatherTemp">--</span>
+            <span class="unit">&deg;F</span>
           </div>
-          <div class="badges">
-            <div id="weatherHumidity" class="skeleton" style="min-width:50px"></div>
-            <div id="weatherWind" class="skeleton" style="min-width:60px"></div>
+          <div class="badges weather-metrics">
+            <div id="weatherHumidity" class="skeleton metric-pill"></div>
+            <div id="weatherWind" class="skeleton metric-pill"></div>
           </div>
         </div>
 
-        <canvas class="spark" id="weatherForecast"></canvas>
-        
-        <div class="status" id="weatherStatus">Loading weather...</div>
-        <div class="status skeleton" id="weatherDaily" style="min-height:14px; margin-top:4px; width:80%;"></div>
-        
-        <div id="weatherUpcoming" class="upcoming-forecast">
-           <div class="forecast-tile skeleton"></div>
-           <div class="forecast-tile skeleton"></div>
-           <div class="forecast-tile skeleton"></div>
-           <div class="forecast-tile skeleton"></div>
-           <div class="forecast-tile skeleton"></div>
+        <canvas class="spark weather-spark" id="weatherForecast"></canvas>
+        <div class="weather-summary-row">
+          <div class="status" id="weatherStatus">Loading weather...</div>
+          <div class="status skeleton" id="weatherDaily"></div>
         </div>
-		<div id="weatherUpcoming" class="upcoming-forecast"></div>
-
-        <div id="almanacContainer" style="margin-top: auto; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.1);">
-          
-          <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:8px;">
-             <div>
-               <div style="color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:0.5px;">Historical Avg</div>
-               <div style="font-weight:600; font-size:14px;">
-                 <span id="almHigh">--</span>° / <span id="almLow">--</span>°
-               </div>
-             </div>
-             <div style="text-align:right;">
-               <div style="color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:0.5px;">Today vs 10yr</div>
-               <div id="almDelta" style="font-weight:600; font-size:14px;">--</div>
-             </div>
-          </div>
-
-          <div style="position:relative; height:45px;">
-             <canvas id="sunCanvas" style="width:100%; height:100%; display:block;"></canvas>
-             <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--muted); margin-top:-10px; position:relative; z-index:2;">
-                <span id="sunriseText">--:--</span>
-                <span id="sunsetText">--:--</span>
-             </div>
-          </div>
-				<div id="almHistory"></div>
+        <div class="weather-alerts" id="weatherAlerts" aria-live="polite">
+          <div class="weather-alert empty">Checking active weather alerts...</div>
         </div>
       </div>
-    </div>
+    </section>
+
+    <section class="sensor-column">
+      <div class="grid" id="grid"></div>
+    </section>
+
+    <aside class="attention-column">
+      <div class="card attention-card">
+        <div class="section-kicker">Attention</div>
+        <h2>What matters now</h2>
+        <div id="attentionList" class="attention-list">
+          <div class="attention-item">Waiting for sensor data.</div>
+        </div>
+      </div>
+
+      <div class="card pollen-card" id="pollenCard">
+        <div class="section-kicker">Pollen</div>
+        <div class="pollen-main">
+          <strong id="pollenLevel">Checking</strong>
+          <span id="pollenSource">Open-Meteo</span>
+        </div>
+        <div class="pollen-detail" id="pollenDetail">Looking for local pollen readings...</div>
+        <div class="pollen-types" id="pollenTypes"></div>
+      </div>
+
+      <div class="card almanac-card" id="almanacContainer">
+        <div class="section-kicker">Almanac</div>
+        <div class="almanac-stats">
+          <div>
+            <div class="mini-label">Historical Avg</div>
+            <strong><span id="almHigh">--</span> / <span id="almLow">--</span>&deg;F</strong>
+          </div>
+          <div>
+            <div class="mini-label">Today vs 10yr</div>
+            <strong id="almDelta">--</strong>
+          </div>
+        </div>
+        <div class="sun-wrap">
+          <canvas id="sunCanvas"></canvas>
+          <div class="sun-times">
+            <span id="sunriseText">--:--</span>
+            <span id="sunsetText">--:--</span>
+          </div>
+        </div>
+        <div id="almHistory"></div>
+      </div>
+    </aside>
+
+    <section class="forecast-column card">
+      <div class="forecast-head">
+        <div class="section-kicker">10 Day Forecast</div>
+        <div id="rainBadge" class="rain-badge">Rain outlook loading</div>
+      </div>
+      <div id="weatherUpcoming" class="upcoming-forecast">
+        <div class="forecast-tile skeleton"></div>
+        <div class="forecast-tile skeleton"></div>
+        <div class="forecast-tile skeleton"></div>
+        <div class="forecast-tile skeleton"></div>
+        <div class="forecast-tile skeleton"></div>
+      </div>
+    </section>
+
+    <section class="insights-column card" id="aiInsightsContainer">
+      <div class="insights-head">
+        <div>
+          <div class="section-kicker">AI Insights</div>
+          <div id="aiInsightsTimestamp" class="insight-time"></div>
+        </div>
+        <div class="insight-actions">
+          <button class="btn icon-btn" id="refreshInsights" title="Refresh insights">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L7 6l5 5V7c2.76 0 5 2.24 5 5a5 5 0 1 1-8.66-3.54 1 1 0 1 0-1.41-1.42A7 7 0 1 0 19 12a6.98 6.98 0 0 0-1.35-5.65Z"/></svg>
+          </button>
+          <button class="btn icon-btn" id="fontSizeDown" title="Decrease font size">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M19 13H5v-2h14v2z"/></svg>
+          </button>
+          <button class="btn icon-btn" id="fontSizeUp" title="Increase font size">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+          </button>
+        </div>
+      </div>
+      <div id="aiInsights" class="ai-insights-list"></div>
+    </section>
   </div>
 </main>
+
+<div class="location-modal" id="locationModal" hidden>
+  <div class="location-modal-panel">
+    <div class="location-modal-head">
+      <div>
+        <div class="section-kicker">Locations</div>
+        <h2>Choose cities</h2>
+      </div>
+      <button class="btn icon-btn" id="closeLocationManager" title="Close locations">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4-6.3-6.3-6.3 6.3-1.4-1.4L9.2 12 2.9 5.7l1.4-1.4 6.3 6.3 6.3-6.3 1.4 1.4Z"/></svg>
+      </button>
+    </div>
+    <div class="location-options" id="locationOptions"></div>
+  </div>
+</div>
 
 <script src="app.js" defer></script>
 </body>
