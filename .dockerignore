@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+.dockerignore
+__pycache__/
+*.py[cod]
+*.log
+almanac_cache.json
+govee_readings.csv
+insights_cache.json
+backup-*/
+.claude/
+Inspo/
