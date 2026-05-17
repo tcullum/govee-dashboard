@@ -10,12 +10,16 @@ ENV/
 
 # Environment variables (contains secrets)
 .env
+.env.*
+!.env.example
 
 # Backup and old files
 *_Backup.*
 *_old.*
 *_OLD.*
 *_bak.*
+backup-*/
+.claude/
 
 # OS files
 .DS_Store
@@ -29,3 +33,4 @@ Thumbs.db
 insights_cache.json
 almanac_cache.json
 govee_readings.csv
+*.log

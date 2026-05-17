@@ -4,12 +4,13 @@
     container_name: govee-dashboard
     working_dir: /app
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:${PORT:-8000}"
     environment:
-      GOVEE_API_KEY: ${GOVEE_API_KEY}
-      NOAA_TOKEN: ${NOAA_TOKEN}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      PORT: ${PORT}
+      GOVEE_API_KEY: ${GOVEE_API_KEY:?Set GOVEE_API_KEY in .env}
+      NOAA_TOKEN: ${NOAA_TOKEN:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
+      PORT: ${PORT:-8000}
     volumes:
       - ./:/app
     restart: unless-stopped
