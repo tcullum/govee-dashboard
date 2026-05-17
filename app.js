@@ -3,7 +3,24 @@ const THEME_KEY = 'goveeTheme';
 const COMPACT_KEY = 'goveeCompact';
 const FONT_SIZE_KEY = 'goveeFontSize';
 const UNIT_KEY = 'goveeUnit';
+const LOCATIONS_KEY = 'goveeSelectedLocations';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const OUTDOOR_KEYWORDS = ['backyard', 'outdoor', 'outside', 'patio', 'porch', 'deck', 'garage', 'yard', 'garden', 'shed'];
+
+const LOCATION_PRESETS = [
+  { id: 'seattle', name: 'Seattle', lat: 47.61, lon: -122.33 },
+  { id: 'san-diego', name: 'San Diego', lat: 32.72, lon: -117.16 },
+  { id: 'orlando', name: 'Orlando', lat: 28.54, lon: -81.38 },
+  { id: 'new-york', name: 'New York', lat: 40.71, lon: -74.01 },
+  { id: 'las-vegas', name: 'Las Vegas', lat: 36.17, lon: -115.14 },
+  { id: 'los-angeles', name: 'Los Angeles', lat: 34.05, lon: -118.24 },
+  { id: 'phoenix', name: 'Phoenix', lat: 33.45, lon: -112.07 },
+  { id: 'chicago', name: 'Chicago', lat: 41.88, lon: -87.63 },
+  { id: 'austin', name: 'Austin', lat: 30.27, lon: -97.74 },
+  { id: 'boston', name: 'Boston', lat: 42.36, lon: -71.06 },
+];
+const DEFAULT_LOCATION_IDS = ['seattle', 'san-diego', 'orlando', 'new-york'];
+let _locationData = null;
 
 let unit = localStorage.getItem(UNIT_KEY) || 'F'; // Default unit
 let autoTimer = null;
@@ -40,16 +57,66 @@ function getIcon(code) {
   return `<svg class="weather-icon-svg" viewBox="0 0 24 24">${path}</svg>`;
 }
 
+function weatherSceneClass(code) {
+  if (code >= 95) return 'scene-storm';
+  if ((code >= 51 && code < 71) || (code >= 80 && code < 95)) return 'scene-rain';
+  if (code >= 71 && code < 80) return 'scene-snow';
+  if (code >= 45 && code < 51) return 'scene-fog';
+  if (code > 1 && code < 45) return 'scene-cloud';
+  return 'scene-clear';
+}
+
+function moonPhaseFraction(date = new Date()) {
+  const synodicMonth = 29.530588853;
+  const knownNewMoon = Date.UTC(2000, 0, 6, 18, 14);
+  const days = (date.getTime() - knownNewMoon) / ONE_DAY_MS;
+  return ((days % synodicMonth) + synodicMonth) % synodicMonth / synodicMonth;
+}
+
+function moonPhaseClass(phase) {
+  if (phase < 0.03 || phase >= 0.97) return 'moon-new';
+  if (phase < 0.22) return 'moon-waxing-crescent';
+  if (phase < 0.28) return 'moon-first-quarter';
+  if (phase < 0.47) return 'moon-waxing-gibbous';
+  if (phase < 0.53) return 'moon-full';
+  if (phase < 0.72) return 'moon-waning-gibbous';
+  if (phase < 0.78) return 'moon-last-quarter';
+  return 'moon-waning-crescent';
+}
+
+function applyWeatherScene(code, daily) {
+  const card = elements.weather.card;
+  if (!card) return;
+
+  const sceneClasses = [
+    'scene-clear', 'scene-cloud', 'scene-rain', 'scene-snow', 'scene-storm', 'scene-fog',
+    'scene-day', 'scene-night',
+    'moon-new', 'moon-waxing-crescent', 'moon-first-quarter', 'moon-waxing-gibbous',
+    'moon-full', 'moon-waning-gibbous', 'moon-last-quarter', 'moon-waning-crescent'
+  ];
+  card.classList.remove(...sceneClasses);
+  card.classList.add(weatherSceneClass(code));
+
+  const now = new Date();
+  const sunrise = daily?.sunrise?.[0] ? new Date(daily.sunrise[0]) : null;
+  const sunset = daily?.sunset?.[0] ? new Date(daily.sunset[0]) : null;
+  const isDay = sunrise && sunset ? now >= sunrise && now <= sunset : true;
+  card.classList.add(isDay ? 'scene-day' : 'scene-night');
+
+  if (!isDay) {
+    card.classList.add(moonPhaseClass(moonPhaseFraction(now)));
+  }
+}
+
 /* === DOM ELEMENTS === */
 const elements = {
   grid: document.getElementById('grid'),
   count: document.getElementById('count'),
+  freshness: document.getElementById('readingsFreshness'),
   notice: document.getElementById('notice'),
   buttons: {
     refresh: document.getElementById('refreshBtn'),
-    reset: document.getElementById('resetOrderBtn'),
     compact: document.getElementById('compactToggleBtn'),
-    reorder: document.getElementById('reorderToggleBtn'),
     themeDark: document.getElementById('themeDark'),
     themeLight: document.getElementById('themeLight'),
     unitF: document.getElementById('unitF'),
@@ -64,7 +131,17 @@ const elements = {
     status: document.getElementById('weatherStatus'),
     daily: document.getElementById('weatherDaily'),
     upcoming: document.getElementById('weatherUpcoming'),
-    canvas: document.getElementById('weatherForecast')
+    canvas: document.getElementById('weatherForecast'),
+    condition: document.getElementById('weatherCondition'),
+    rainBadge: document.getElementById('rainBadge'),
+    alerts: document.getElementById('weatherAlerts')
+  },
+  pollen: {
+    card: document.getElementById('pollenCard'),
+    level: document.getElementById('pollenLevel'),
+    source: document.getElementById('pollenSource'),
+    detail: document.getElementById('pollenDetail'),
+    types: document.getElementById('pollenTypes')
   }
 };
 
@@ -82,12 +159,446 @@ function classifyF(f) {
   return 'hot';
 }
 
+function isOutdoorSensor(item) {
+  const name = (item.name || '').toLowerCase();
+  return OUTDOOR_KEYWORDS.some(keyword => name.includes(keyword));
+}
+
+function getSensorNotes(item, minsAgo) {
+  const outdoor = isOutdoorSensor(item);
+  const notes = [];
+  let needsAttention = false;
+  let outdoorCondition = false;
+
+  if (minsAgo > 30) {
+    notes.push({ text: 'Stale data', type: 'attention' });
+    needsAttention = true;
+  }
+
+  if (isValid(item._tF)) {
+    if (outdoor) {
+      if (item._tF >= 95) {
+        notes.push({ text: 'Outdoor heat', type: 'condition' });
+        outdoorCondition = true;
+      } else if (item._tF <= 40) {
+        notes.push({ text: 'Outdoor cold', type: 'condition' });
+        outdoorCondition = true;
+      }
+    } else if (item._tF < 60 || item._tF > 85) {
+      notes.push({ text: item._tF > 85 ? 'Indoor hot' : 'Indoor cold', type: 'attention' });
+      needsAttention = true;
+    }
+  }
+
+  if (isValid(item.humidity)) {
+    if (outdoor) {
+      if (item.humidity < 15) {
+        notes.push({ text: 'Very dry outside', type: 'condition' });
+        outdoorCondition = true;
+      } else if (item.humidity > 80) {
+        notes.push({ text: 'Humid outside', type: 'condition' });
+        outdoorCondition = true;
+      }
+    } else if (item.humidity < 30 || item.humidity > 60) {
+      notes.push({ text: item.humidity < 30 ? 'Dry indoor air' : 'Humid indoor air', type: 'attention' });
+      needsAttention = true;
+    }
+  }
+
+  if (isValid(item.battery) && item.battery < 15) {
+    notes.push({ text: 'Low battery', type: 'attention' });
+    needsAttention = true;
+  }
+
+  return { notes, needsAttention, outdoorCondition, outdoor };
+}
+
+function sensorComfortLabel(item, sensorState) {
+  if (sensorState.needsAttention) return 'Check';
+  if (sensorState.outdoorCondition) {
+    if (isValid(item.humidity) && item.humidity < 20) return 'Very dry';
+    if (isValid(item.humidity) && item.humidity > 80) return 'Humid';
+    if (isValid(item._tF) && item._tF >= 95) return 'Hot';
+    if (isValid(item._tF) && item._tF <= 40) return 'Cold';
+    return 'Dry';
+  }
+  return sensorState.outdoor ? 'Outdoor' : 'Comfort';
+}
+
+function displaySensorName(item) {
+  return (item.name || 'Unnamed').replace(/^smart\s+/i, '');
+}
+
+function updateHouseAlert(items, counts, reasons) {
+  const banner = document.getElementById('alertBanner');
+  const title = document.getElementById('alertTitle');
+  const body = document.getElementById('alertBody');
+  const pills = document.getElementById('alertPills');
+  const list = document.getElementById('attentionList');
+  if (!banner || !title || !body || !pills || !list) return;
+
+  const outdoor = items.find(item => isOutdoorSensor(item)) || items[items.length - 1];
+  const indoor = items.filter(item => !isOutdoorSensor(item));
+  const indoorStable = indoor.length && indoor.every(item =>
+    isValid(item._tF) && item._tF >= 60 && item._tF <= 85 &&
+    (!isValid(item.humidity) || (item.humidity >= 30 && item.humidity <= 60))
+  );
+
+  let headline = 'House weather looks steady';
+  let message = indoorStable ? 'Indoor rooms are inside target range.' : 'Watch indoor rooms for comfort changes.';
+  const alertItems = [];
+
+  if (outdoor && isValid(outdoor._tF) && isValid(outdoor.humidity) && outdoor.humidity < 20) {
+    headline = `${displaySensorName(outdoor)} is very dry right now`;
+    message = `${fmt(outdoor._tF, 1)} F with ${fmt(outdoor.humidity, 0)}% humidity. ${indoorStable ? 'Indoor rooms are stable, so keep windows closed and hydrate.' : 'Check indoor humidity and avoid bringing the dry air inside.'}`;
+    alertItems.push({ type: 'bad', title: 'Outdoor humidity is extreme', text: `${fmt(outdoor.humidity, 0)}% is the only out-of-range live sensor value.` });
+  } else if (counts.attention > 0) {
+    headline = 'A room needs attention';
+    message = reasons[0] || 'One or more readings are outside the expected range.';
+  } else if (counts.condition > 0) {
+    headline = 'Outdoor conditions are notable';
+    message = reasons[0] || 'Outdoor readings are outside the usual comfort range.';
+  }
+
+  if (outdoor && isValid(outdoor._tF)) {
+    alertItems.unshift({
+      type: outdoor._tF >= 90 ? 'bad' : 'info',
+      title: outdoor._tF >= 90 ? 'Heat is still rising outside' : 'Outdoor trend is calm',
+      text: `${displaySensorName(outdoor)} is ${fmt(outdoor._tF, 1)} F right now.`
+    });
+  }
+
+  if (indoor.length) {
+    alertItems.push({
+      type: 'info',
+      title: indoorStable ? 'Indoor comfort is holding' : 'Indoor comfort needs a look',
+      text: indoorStable ? 'Living spaces remain inside target range despite outdoor conditions.' : 'At least one indoor room is outside the preferred range.'
+    });
+  }
+
+  title.textContent = headline;
+  body.textContent = message;
+  banner.hidden = false;
+
+  pills.innerHTML = '';
+  if (outdoor && isValid(outdoor._tF)) {
+    const tempPill = document.createElement('span');
+    tempPill.className = 'alert-pill';
+    tempPill.textContent = `Outdoor ${fmt(outdoor._tF, 1)} F`;
+    pills.appendChild(tempPill);
+  }
+  if (outdoor && isValid(outdoor.humidity)) {
+    const humPill = document.createElement('span');
+    humPill.className = 'alert-pill';
+    humPill.textContent = `Humidity ${fmt(outdoor.humidity, 0)}%`;
+    pills.appendChild(humPill);
+  }
+
+  list.innerHTML = alertItems.slice(0, 4).map(item => `
+    <div class="attention-item ${item.type}">
+      <strong>${item.title}</strong>
+      ${item.text}
+    </div>
+  `).join('');
+}
+
+function formatAge(seconds) {
+  if (!isValid(seconds)) return '';
+  if (seconds < 5) return 'just now';
+  if (seconds < 60) return `${Math.round(seconds)}s ago`;
+  const mins = Math.round(seconds / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  return `${hours}h ago`;
+}
+
+function updateFreshness(readings) {
+  if (!elements.freshness) return;
+  elements.freshness.title = 'Govee refreshes automatically in the background';
+
+  const liveAge = readings.last_live_age_seconds;
+  const cacheAge = readings.age_seconds;
+  const isLog = readings.source === 'log';
+  const isRefreshing = readings.refreshing;
+
+  elements.freshness.className = 'chip freshness-chip';
+
+  if (isLog) {
+    elements.freshness.textContent = isRefreshing ? 'Last logged · refreshing' : 'Last logged';
+    elements.freshness.classList.add('stale');
+    return;
+  }
+
+  if (isValid(liveAge)) {
+    elements.freshness.textContent = `${isRefreshing ? 'Refreshing · ' : 'Live '}${formatAge(liveAge)}`;
+    if (liveAge > 180) elements.freshness.classList.add('stale');
+    else if (isRefreshing || cacheAge > 45) elements.freshness.classList.add('refreshing');
+    return;
+  }
+
+  elements.freshness.textContent = isRefreshing ? 'Refreshing' : 'Waiting';
+  elements.freshness.classList.add('refreshing');
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[char]);
+}
+
+function alertSeverityClass(alert) {
+  const event = (alert.event || '').toLowerCase();
+  const severity = (alert.severity || '').toLowerCase();
+  if (severity === 'extreme' || event.includes('warning')) return 'severe';
+  if (severity === 'severe' || event.includes('watch')) return 'watch';
+  if (severity === 'moderate' || event.includes('advisory')) return 'advisory';
+  return 'info';
+}
+
+function alertRank(alert) {
+  const event = (alert.event || '').toLowerCase();
+  const severity = (alert.severity || '').toLowerCase();
+  if (severity === 'extreme') return 0;
+  if (event.includes('warning')) return 1;
+  if (severity === 'severe') return 2;
+  if (event.includes('watch')) return 3;
+  if (event.includes('advisory')) return 4;
+  return 5;
+}
+
+function formatAlertTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function nwsIdFromUrl(value) {
+  if (!value) return '';
+  return String(value).split('/').filter(Boolean).pop() || '';
+}
+
+function firstCode(codes, pattern) {
+  return (codes || []).find(code => pattern.test(code)) || '';
+}
+
+async function loadNwsPointMeta(lat, lon, fallbackPlace) {
+  try {
+    const pointUrl = `https://api.weather.gov/points/${lat.toFixed(4)},${lon.toFixed(4)}`;
+    const res = await fetch(pointUrl, { headers: { Accept: 'application/geo+json' } });
+    if (!res.ok) throw new Error(`Points API returned ${res.status}`);
+    const point = await res.json();
+    const props = point.properties || {};
+    const relative = props.relativeLocation?.properties || {};
+    const city = relative.city || fallbackPlace || 'Local Area';
+    const state = relative.state || '';
+
+    return {
+      forecastZone: nwsIdFromUrl(props.forecastZone),
+      county: nwsIdFromUrl(props.county),
+      fireWeatherZone: nwsIdFromUrl(props.fireWeatherZone),
+      place: state && !city.includes(state) ? `${city} ${state}` : city
+    };
+  } catch (e) {
+    console.warn('NWS point metadata unavailable', e);
+    return { forecastZone: '', county: '', fireWeatherZone: '', place: fallbackPlace || 'Local Area' };
+  }
+}
+
+function buildWeatherAlertUrl(alert, pointMeta, lat, lon) {
+  const ugcCodes = alert.geocode?.UGC || [];
+  const warnzone = firstCode(ugcCodes, /^[A-Z]{2}Z\d{3}$/) || pointMeta.forecastZone;
+  const warncounty = firstCode(ugcCodes, /^[A-Z]{2}C\d{3}$/) || pointMeta.county;
+  const firewxzone = pointMeta.fireWeatherZone || warnzone;
+
+  if (!warnzone || !warncounty) {
+    return `https://forecast.weather.gov/MapClick.php?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}`;
+  }
+
+  const params = new URLSearchParams({
+    warnzone,
+    warncounty,
+    firewxzone,
+    local_place1: pointMeta.place || 'Local Area',
+    product1: alert.event || 'Weather Alert',
+    lat: lat.toFixed(4),
+    lon: lon.toFixed(4)
+  });
+
+  return `https://forecast.weather.gov/showsigwx.php?${params.toString()}`;
+}
+
+function compactAlertDetail(alert) {
+  const parts = [alert.description, alert.instruction]
+    .filter(Boolean)
+    .map(part => String(part).trim());
+  const raw = parts.join(' ');
+  return raw
+    .replace(/\s+/g, ' ')
+    .replace(/\* WHAT\.\.\./gi, 'What: ')
+    .replace(/\* WHERE\.\.\./gi, ' Where: ')
+    .replace(/\* WHEN\.\.\./gi, ' When: ')
+    .replace(/\* IMPACTS\.\.\./gi, ' Impacts: ')
+    .replace(/\* ADDITIONAL DETAILS\.\.\./gi, ' Details: ')
+    .replace(/\* PRECAUTIONARY\/PREPAREDNESS ACTIONS\.\.\./gi, ' Safety: ')
+    .trim();
+}
+
+async function loadWeatherAlerts(lat, lon, locName = 'Local Area') {
+  if (!elements.weather.alerts) return;
+
+  elements.weather.alerts.innerHTML = '<div class="weather-alert empty">Checking active weather alerts...</div>';
+
+  try {
+    const alertPoint = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+    const alertsUrl = `https://api.weather.gov/alerts/active?point=${alertPoint}`;
+    const [res, pointMeta] = await Promise.all([
+      fetch(alertsUrl, { headers: { Accept: 'application/geo+json' } }),
+      loadNwsPointMeta(lat, lon, locName)
+    ]);
+    if (!res.ok) throw new Error(`Alerts API returned ${res.status}`);
+
+    const data = await res.json();
+    const alerts = (data.features || [])
+      .map(feature => feature.properties || {})
+      .filter(alert => alert.event)
+      .sort((a, b) => alertRank(a) - alertRank(b));
+
+    if (!alerts.length) {
+      elements.weather.alerts.innerHTML = '<div class="weather-alert empty">No active local weather warnings.</div>';
+      return;
+    }
+
+    elements.weather.alerts.innerHTML = alerts.slice(0, 2).map(alert => {
+      const event = escapeHtml(alert.event);
+      const area = escapeHtml((alert.areaDesc || '').split(';').slice(0, 2).join(', '));
+      const expires = formatAlertTime(alert.expires);
+      const timing = expires ? `Until ${escapeHtml(expires)}` : escapeHtml(alert.status || 'Active');
+      const headline = escapeHtml(alert.headline || alert.description || '');
+      const summary = area || headline.replace(event, '').trim();
+      const details = escapeHtml(compactAlertDetail(alert));
+      const detailUrl = escapeHtml(buildWeatherAlertUrl(alert, pointMeta, lat, lon));
+
+      return `
+        <a class="weather-alert ${alertSeverityClass(alert)}" href="${detailUrl}" target="_blank" rel="noopener noreferrer">
+          <div>
+            <strong>${event}</strong>
+            <span>${summary}</span>
+            <span class="weather-alert-detail">${details}</span>
+          </div>
+          <time>${timing}</time>
+        </a>
+      `;
+    }).join('');
+  } catch (e) {
+    console.warn('Weather alerts unavailable', e);
+    elements.weather.alerts.innerHTML = '<div class="weather-alert empty">Weather alerts unavailable.</div>';
+  }
+}
+
+const POLLEN_TYPES = [
+  { key: 'alder_pollen', label: 'Alder' },
+  { key: 'birch_pollen', label: 'Birch' },
+  { key: 'grass_pollen', label: 'Grass' },
+  { key: 'mugwort_pollen', label: 'Mugwort' },
+  { key: 'olive_pollen', label: 'Olive' },
+  { key: 'ragweed_pollen', label: 'Ragweed' },
+];
+
+function pollenRisk(value) {
+  if (!isValid(value) || value <= 0) return { label: 'Low', className: 'low' };
+  if (value < 10) return { label: 'Low', className: 'low' };
+  if (value < 50) return { label: 'Moderate', className: 'moderate' };
+  if (value < 100) return { label: 'High', className: 'high' };
+  return { label: 'Very high', className: 'very-high' };
+}
+
+function setPollenUnavailable(message) {
+  if (!elements.pollen.card) return;
+  elements.pollen.card.className = 'card pollen-card unavailable';
+  elements.pollen.level.textContent = 'Unavailable';
+  elements.pollen.source.textContent = 'Pollen';
+  elements.pollen.detail.textContent = message;
+  elements.pollen.types.innerHTML = '';
+}
+
+async function loadPollen(lat, lon) {
+  if (!elements.pollen.card) return;
+
+  elements.pollen.card.className = 'card pollen-card loading';
+  elements.pollen.level.textContent = 'Checking';
+  elements.pollen.source.textContent = 'Open-Meteo';
+  elements.pollen.detail.textContent = 'Looking for local pollen readings...';
+  elements.pollen.types.innerHTML = '';
+
+  try {
+    const variables = POLLEN_TYPES.map(type => type.key).join(',');
+    const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current=${variables}&timezone=auto`;
+    const data = await fetch(url).then(r => {
+      if (!r.ok) throw new Error(`Pollen API returned ${r.status}`);
+      return r.json();
+    });
+
+    const current = data.current || {};
+    const readings = POLLEN_TYPES
+      .map(type => ({ ...type, value: Number(current[type.key]) }))
+      .filter(item => isValid(item.value));
+
+    if (!readings.length) {
+      setPollenUnavailable('Pollen readings are not available for this area from Open-Meteo.');
+      return;
+    }
+
+    const top = readings.reduce((best, item) => item.value > best.value ? item : best, readings[0]);
+    const risk = pollenRisk(top.value);
+    elements.pollen.card.className = `card pollen-card ${risk.className}`;
+    elements.pollen.level.textContent = risk.label;
+    elements.pollen.source.textContent = 'Current';
+    elements.pollen.detail.textContent = top.value > 0
+      ? `${top.label} is the highest current reading at ${Math.round(top.value)} grains/m3.`
+      : 'No meaningful pollen detected in current Open-Meteo readings.';
+    elements.pollen.types.innerHTML = readings
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 4)
+      .map(item => `<span>${item.label} ${Math.round(item.value)}</span>`)
+      .join('');
+  } catch (e) {
+    console.warn('Pollen unavailable', e);
+    setPollenUnavailable('Unable to load pollen readings right now.');
+  }
+}
+
 /* === THEME & SETTINGS === */
 function applyTheme(mode, persist = true) {
   document.documentElement.setAttribute('data-theme', mode);
   elements.buttons.themeDark.classList.toggle('active', mode === 'dark');
   elements.buttons.themeLight.classList.toggle('active', mode === 'light');
+  elements.buttons.themeDark.hidden = mode === 'dark';
+  elements.buttons.themeLight.hidden = mode === 'light';
+  elements.buttons.themeDark.setAttribute('aria-hidden', mode === 'dark' ? 'true' : 'false');
+  elements.buttons.themeLight.setAttribute('aria-hidden', mode === 'light' ? 'true' : 'false');
   if (persist) localStorage.setItem(THEME_KEY, mode);
+}
+
+function applyUnitButtons() {
+  elements.buttons.unitF.classList.toggle('active', unit === 'F');
+  elements.buttons.unitC.classList.toggle('active', unit === 'C');
+  elements.buttons.unitF.hidden = unit === 'F';
+  elements.buttons.unitC.hidden = unit === 'C';
+  elements.buttons.unitF.setAttribute('aria-hidden', unit === 'F' ? 'true' : 'false');
+  elements.buttons.unitC.setAttribute('aria-hidden', unit === 'C' ? 'true' : 'false');
+}
+
+function setUnit(nextUnit) {
+  unit = nextUnit;
+  localStorage.setItem(UNIT_KEY, nextUnit);
+  applyUnitButtons();
+  loadData();
+  renderLocationStrip();
 }
 
 function applyFontSize(size) {
@@ -143,9 +654,32 @@ function initSettings() {
       });
     };
   }
+
+  const closeLocations = document.getElementById('closeLocationManager');
+  const locationModal = document.getElementById('locationModal');
+  if (closeLocations) closeLocations.onclick = closeLocationManager;
+  if (locationModal) {
+    locationModal.onclick = (event) => {
+      if (event.target === locationModal) closeLocationManager();
+    };
+  }
 }
 
 /* === INTERACTIVE CHARTING === */
+function smoothSparkValues(values, radius = 4) {
+  if (!Array.isArray(values) || values.length < 4) return values;
+  return values.map((value, index) => {
+    const start = Math.max(0, index - radius);
+    const end = Math.min(values.length - 1, index + radius);
+    const slice = values.slice(start, end + 1);
+    return slice.reduce((sum, n) => sum + n, 0) / slice.length;
+  });
+}
+
+function smoothStep(t) {
+  return t * t * (3 - 2 * t);
+}
+
 function drawSpark(canvas, data) {
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
@@ -164,7 +698,8 @@ function drawSpark(canvas, data) {
     return;
   }
 
-  const values = data.map(d => d.val);
+  const rawValues = data.map(d => d.val);
+  const values = smoothSparkValues(rawValues, 4);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = (max - min) || 1;
@@ -182,17 +717,29 @@ function drawSpark(canvas, data) {
     grad.addColorStop(0.5, '#fbbf24');
     grad.addColorStop(1, '#3b82f6');
 
-    ctx.beginPath();
-    ctx.moveTo(getPt(0).x, getPt(0).y);
+    const sourcePoints = values.map((_, i) => getPt(i));
+    const points = [];
+    const samplesPerSegment = 6;
 
-    for (let i = 0; i < values.length - 1; i++) {
-       const pCurrent = getPt(i);
-       const pNext = getPt(i+1);
-       const cp1x = pCurrent.x + (pNext.x - pCurrent.x) / 2;
-       const cp1y = pCurrent.y; 
-       const cp2x = pCurrent.x + (pNext.x - pCurrent.x) / 2;
-       const cp2y = pNext.y;
-       ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, pNext.x, pNext.y);
+    for (let i = 0; i < sourcePoints.length - 1; i++) {
+      const start = sourcePoints[i];
+      const end = sourcePoints[i + 1];
+      if (i === 0) points.push(start);
+
+      for (let sample = 1; sample <= samplesPerSegment; sample++) {
+        const t = sample / samplesPerSegment;
+        const eased = smoothStep(t);
+        points.push({
+          x: start.x + (end.x - start.x) * t,
+          y: start.y + (end.y - start.y) * eased
+        });
+      }
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+       ctx.lineTo(points[i].x, points[i].y);
     }
     
     ctx.lineWidth = 2;
@@ -413,6 +960,137 @@ async function loadAlmanacInsights(forceRefresh = false) {
   }
 }
 
+/* === LOCATION STRIP === */
+function getSelectedLocationIds() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LOCATIONS_KEY) || 'null');
+    if (Array.isArray(saved) && saved.length) {
+      return saved.filter(id => LOCATION_PRESETS.some(loc => loc.id === id));
+    }
+  } catch {}
+  return DEFAULT_LOCATION_IDS;
+}
+
+function getSelectedLocations() {
+  const ids = getSelectedLocationIds();
+  return LOCATION_PRESETS.filter(loc => ids.includes(loc.id));
+}
+
+function saveSelectedLocationIds(ids) {
+  const clean = ids.filter(id => LOCATION_PRESETS.some(loc => loc.id === id));
+  localStorage.setItem(LOCATIONS_KEY, JSON.stringify(clean.length ? clean : DEFAULT_LOCATION_IDS));
+}
+
+function renderLocationManager() {
+  const options = document.getElementById('locationOptions');
+  if (!options) return;
+
+  const selected = new Set(getSelectedLocationIds());
+  options.innerHTML = LOCATION_PRESETS.map(loc => `
+    <label class="location-option">
+      <input type="checkbox" value="${loc.id}" ${selected.has(loc.id) ? 'checked' : ''}>
+      <span>${loc.name}</span>
+    </label>
+  `).join('');
+
+  options.querySelectorAll('input').forEach(input => {
+    input.onchange = () => {
+      const ids = Array.from(options.querySelectorAll('input:checked')).map(item => item.value);
+      saveSelectedLocationIds(ids);
+      loadLocationStrip();
+    };
+  });
+}
+
+function openLocationManager() {
+  renderLocationManager();
+  const modal = document.getElementById('locationModal');
+  if (modal) modal.hidden = false;
+}
+
+function closeLocationManager() {
+  const modal = document.getElementById('locationModal');
+  if (modal) modal.hidden = true;
+}
+
+function renderLocationStrip() {
+  const strip = document.getElementById('locationStrip');
+  if (!strip || !_locationData) return;
+
+  const cards = _locationData.map(loc => {
+    if (!loc.current) {
+      return `<div class="loc-card">
+        <div class="loc-name">${loc.name}</div>
+        <div class="loc-temp-row"><span class="loc-temp">—</span></div>
+      </div>`;
+    }
+    const tempF = loc.current.temperature_2m;
+    const hiF   = loc.daily_high;
+    const loF   = loc.daily_low;
+    const code  = loc.current.weathercode;
+    const disp  = v => Math.round(unit === 'C' ? fToC(v) : v);
+    const desc  = WEATHER_DESC[code] || '';
+    return `<div class="loc-card">
+      <div class="loc-name">${loc.name}</div>
+      <div class="loc-temp-row">
+        <span class="loc-temp">${disp(tempF)}°</span>
+        <span class="loc-icon">${getIcon(code)}</span>
+      </div>
+      <div class="loc-hi-lo">
+        <span class="lo">${disp(loF)}°</span>
+        <span style="opacity:.4"> / </span>
+        <span class="hi">${disp(hiF)}°</span>
+        <span style="opacity:.5; font-size:10px; margin-left:3px;">${desc}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  strip.innerHTML = `${cards}
+    <button class="loc-card loc-edit-card" id="editLocations" type="button">
+      <span class="loc-name">Locations</span>
+      <span class="loc-edit-label">Edit</span>
+    </button>`;
+
+  const edit = document.getElementById('editLocations');
+  if (edit) edit.onclick = openLocationManager;
+}
+
+async function loadLocationStrip() {
+  const strip = document.getElementById('locationStrip');
+  if (!strip) return;
+  const locations = getSelectedLocations();
+
+  // Skeleton placeholders
+  strip.innerHTML = locations.map(() =>
+    `<div class="loc-card skeleton" style="height:74px;"></div>`
+  ).join('') + `<button class="loc-card loc-edit-card" id="editLocations" type="button"><span class="loc-name">Locations</span><span class="loc-edit-label">Edit</span></button>`;
+
+  const loadingEdit = document.getElementById('editLocations');
+  if (loadingEdit) loadingEdit.onclick = openLocationManager;
+
+  const results = await Promise.allSettled(
+    locations.map(loc => {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}` +
+        `&current=temperature_2m,weathercode&daily=temperature_2m_max,temperature_2m_min` +
+        `&temperature_unit=fahrenheit&forecast_days=1&timezone=auto`;
+      return fetch(url).then(r => r.json()).then(data => ({ ...loc, data }));
+    })
+  );
+
+  _locationData = results.map((r, i) => {
+    if (r.status !== 'fulfilled') return { name: locations[i].name, current: null };
+    const d = r.value.data;
+    return {
+      name:       r.value.name,
+      current:    d.current   || null,
+      daily_high: (d.daily?.temperature_2m_max || [])[0] ?? null,
+      daily_low:  (d.daily?.temperature_2m_min || [])[0] ?? null,
+    };
+  });
+
+  renderLocationStrip();
+}
+
 /* === ALMANAC & HISTORY LOGIC === */
 async function loadAlmanac(weatherData) {
   // 1. Sun Cycle
@@ -498,7 +1176,9 @@ async function loadAlmanac(weatherData) {
 function renderSensors(data, history) {
   elements.count.textContent = data.items.length;
   const now = Date.now();
-  let alertCount = 0;
+  let attentionCount = 0;
+  let outdoorConditionCount = 0;
+  const headerReasons = [];
 
   const processedItems = data.items.map(item => {
     let tF = item.temp_f;
@@ -533,6 +1213,7 @@ function renderSensors(data, history) {
             <div class="name"></div>
             <div class="device"></div>
           </div>
+          <div class="sensor-tags"></div>
         </div>
         <div class="reading">
           <div class="temp-wrap">
@@ -555,24 +1236,33 @@ function renderSensors(data, history) {
     const lastTs = item.timestamp ? new Date(item.timestamp) : null;
     const minsAgo = lastTs ? (now - lastTs.getTime())/60000 : 0;
     const staleClass = minsAgo > 30 ? 'stale-card' : '';
+    const sensorState = getSensorNotes(item, minsAgo);
 
-    // Detect extreme conditions
-    let hasAlert = false;
-    if (item._tF && (item._tF < 60 || item._tF > 85)) hasAlert = true;
-    if (item.humidity && (item.humidity < 20 || item.humidity > 70)) hasAlert = true;
-    if (item.battery && item.battery < 15) hasAlert = true;
-    if (hasAlert) alertCount++;
+    if (sensorState.needsAttention) {
+      attentionCount++;
+      headerReasons.push(`${displaySensorName(item)}: ${sensorState.notes.filter(n => n.type === 'attention').map(n => n.text).join(', ')}`);
+    } else if (sensorState.outdoorCondition) {
+      outdoorConditionCount++;
+      headerReasons.push(`${displaySensorName(item)}: ${sensorState.notes.filter(n => n.type === 'condition').map(n => n.text).join(', ')}`);
+    }
 
-    const alertClass = hasAlert ? 'alert-card' : '';
-    card.className = `card sensor-card ${cls} ${staleClass} ${alertClass}`;
+    const stateClass = sensorState.needsAttention ? 'attention-card' : (sensorState.outdoorCondition ? 'condition-card' : '');
+    card.className = `card sensor-card ${cls} ${staleClass} ${stateClass}`;
 
-    card.querySelector('.name').textContent = item.name || 'Unnamed';
+    card.querySelector('.name').textContent = displaySensorName(item);
     card.querySelector('.device').textContent = item.device;
     card.querySelector('.temp').textContent = fmt(displayTemp, 1);
-    card.querySelector('.unit').textContent = `°${unit}`;
+    card.querySelector('.unit').textContent = `\u00b0${unit}`;
+
+    const tagWrap = card.querySelector('.sensor-tags');
+    tagWrap.innerHTML = '';
+    const stateTag = document.createElement('span');
+    stateTag.className = `sensor-tag ${sensorState.needsAttention ? 'attention' : (sensorState.outdoorCondition ? 'condition' : '')}`;
+    stateTag.textContent = sensorComfortLabel(item, sensorState);
+    tagWrap.appendChild(stateTag);
     
     const humBadge = card.querySelector('.humidity-badge');
-    humBadge.textContent = isValid(item.humidity) ? `💧 ${fmt(item.humidity, 0)}%` : '—%';
+    humBadge.textContent = isValid(item.humidity) ? `${fmt(item.humidity, 0)}%` : '--%';
     humBadge.className = `humidity-badge ${item.humidity < 30 || item.humidity > 60 ? 'humidity-bad' : ''}`;
     
     const batBadge = card.querySelector('.battery-badge');
@@ -585,10 +1275,9 @@ function renderSensors(data, history) {
     }
 
     const statusDiv = card.querySelector('.status');
-    let statusHtml = `<span>${minsAgo > 60 ? Math.round(minsAgo/60)+'h ago' : Math.round(minsAgo)+'m ago'}</span>`;
-    statusHtml += ` <span style="opacity:0.5; margin-left:auto; font-size:9px;">24h History</span>`;
-    if (minsAgo > 30) statusHtml += ` <span class="chip">STALE</span>`;
-    statusDiv.innerHTML = statusHtml;
+    const updatedText = minsAgo > 60 ? `${Math.round(minsAgo / 60)}h ago` : `${Math.max(0, Math.round(minsAgo))}m ago`;
+    const reasonText = sensorState.notes.length ? sensorState.notes.map(n => n.text).join(' / ') : 'Within expected range';
+    statusDiv.innerHTML = `<span>Updated ${updatedText}</span><span class="status-reason">${reasonText}</span><span class="history-label">24h</span>`;
     statusDiv.style.display = 'flex';
 
     // Chart Logic
@@ -628,20 +1317,30 @@ function renderSensors(data, history) {
   // Update alert badge
   const alertBadge = document.getElementById('alertCount');
   if (alertBadge) {
-    if (alertCount > 0) {
-      alertBadge.textContent = `⚠ ${alertCount}`;
+    if (attentionCount > 0) {
+      alertBadge.textContent = `Attention ${attentionCount}`;
+      alertBadge.className = 'chip alert-chip attention';
+      alertBadge.title = headerReasons.join('\n');
+      alertBadge.style.display = '';
+    } else if (outdoorConditionCount > 0) {
+      alertBadge.textContent = `Outdoor condition ${outdoorConditionCount}`;
+      alertBadge.className = 'chip alert-chip condition';
+      alertBadge.title = headerReasons.join('\n');
       alertBadge.style.display = '';
     } else {
+      alertBadge.title = '';
       alertBadge.style.display = 'none';
     }
   }
+
+  updateHouseAlert(processedItems, { attention: attentionCount, condition: outdoorConditionCount }, headerReasons);
 }
 
 async function loadData() {
   try {
     // --- REFRESH ANIMATION UPDATE ---
     // Instead of adding .pulse to the wrapper, we toggle .spin on the icon itself
-    const refreshIcon = elements.buttons.refresh.querySelector('.icon');
+    const refreshIcon = elements.buttons.refresh?.querySelector('.icon');
     if (refreshIcon) refreshIcon.classList.add('spin');
 
     const [rRead, rHist] = await Promise.all([
@@ -659,6 +1358,7 @@ async function loadData() {
     // Only render if we have data - prevents panels from disappearing on empty response
     if (readings && readings.items && readings.items.length > 0) {
       renderSensors(readings, history.series || {});
+      updateFreshness(readings);
       elements.notice.textContent = ""; // Clear any error message
     } else {
       console.warn("API returned empty sensor data - preserving existing panels");
@@ -674,7 +1374,7 @@ async function loadData() {
     elements.notice.textContent = `⚠ API Error: ${e.message}`;
 
     // Stop refresh animation even on error
-    const refreshIcon = elements.buttons.refresh.querySelector('.icon');
+    const refreshIcon = elements.buttons.refresh?.querySelector('.icon');
     if (refreshIcon) refreshIcon.classList.remove('spin');
   }
 }
@@ -692,7 +1392,7 @@ async function loadWeather() {
     } catch {}
   }
 
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weathercode,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode,sunrise,sunset&hourly=temperature_2m&temperature_unit=fahrenheit&windspeed_unit=mph&forecast_days=6&timezone=auto`;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weathercode,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode,sunrise,sunset&hourly=temperature_2m&temperature_unit=fahrenheit&windspeed_unit=mph&forecast_days=11&timezone=auto`;
   
   try {
     const data = await fetch(url).then(r=>r.json());
@@ -700,26 +1400,44 @@ async function loadWeather() {
 
     elements.weather.loc.textContent = locName;
     elements.weather.temp.textContent = data.current.temperature_2m.toFixed(1);
-    elements.weather.hum.textContent = `💧 ${data.current.relative_humidity_2m}%`;
-    elements.weather.wind.textContent = `💨 ${data.current.wind_speed_10m} mph`;
+    elements.weather.hum.textContent = `Humidity ${data.current.relative_humidity_2m}%`;
+    elements.weather.wind.textContent = `Wind ${data.current.wind_speed_10m} mph`;
     
     const code = data.current.weathercode;
     const desc = WEATHER_DESC[code] || "Unknown";
     const timeStr = new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
-    elements.weather.status.textContent = `${desc} • Updated ${timeStr}`;
+    applyWeatherScene(code, data.daily);
+    if (elements.weather.condition) elements.weather.condition.textContent = desc.replace(' Sky', '');
+    elements.weather.status.textContent = `${desc}, updated ${timeStr}`;
 
     const d = data.daily;
-    elements.weather.daily.innerHTML = `Today: ${Math.round(d.temperature_2m_min[0])}° / ${Math.round(d.temperature_2m_max[0])}° • ${d.precipitation_probability_max[0]}% rain`;
+    elements.weather.daily.textContent = `Today ${Math.round(d.temperature_2m_min[0])} / ${Math.round(d.temperature_2m_max[0])} F with ${d.precipitation_probability_max[0]}% rain.`;
 
     let html = '';
-    for(let i=1; i<6; i++) {
+    const forecastCount = Math.min(10, d.time.length);
+    const lows = d.temperature_2m_min.slice(0, forecastCount);
+    const highs = d.temperature_2m_max.slice(0, forecastCount);
+    const rangeMin = Math.min(...lows);
+    const rangeMax = Math.max(...highs);
+    const rangeSpan = Math.max(1, rangeMax - rangeMin);
+    const maxRain = Math.max(...d.precipitation_probability_max.slice(0, forecastCount));
+    if (elements.weather.rainBadge) {
+      elements.weather.rainBadge.textContent = maxRain < 5 ? 'Rain risk stays under 5%' : `Peak rain risk ${maxRain}%`;
+    }
+
+    for(let i=0; i<forecastCount; i++) {
       const date = new Date(d.time[i] + 'T00:00:00');
-      const dayName = date.toLocaleDateString('en-US', {weekday:'short'});
+      const dayName = i === 0 ? 'Today' : date.toLocaleDateString('en-US', {weekday:'short'});
+      const low = Math.round(d.temperature_2m_min[i]);
+      const high = Math.round(d.temperature_2m_max[i]);
+      const barStart = ((low - rangeMin) / rangeSpan) * 100;
+      const barWidth = Math.max(8, ((high - low) / rangeSpan) * 100);
       html += `
         <div class="forecast-tile">
           <div class="day">${dayName}</div>
           <div class="icon">${getIcon(d.weathercode[i])}</div>
-          <div class="temps">${Math.round(d.temperature_2m_min[i])}°/${Math.round(d.temperature_2m_max[i])}°</div>
+          <div class="temps"><span class="low">${low}</span><span class="high">${high}</span></div>
+          <div class="temp-range" aria-hidden="true"><span style="left:${barStart}%; width:${barWidth}%;"></span></div>
           <div class="rain">${d.precipitation_probability_max[i]}% rain</div>
         </div>`;
     }
@@ -728,6 +1446,8 @@ async function loadWeather() {
     // Weather Sparkline
     const hourly = data.hourly.temperature_2m.slice(0, 24).map(v => ({ val: v })); 
     drawSpark(elements.weather.canvas, hourly);
+    loadWeatherAlerts(lat, lon, locName);
+    loadPollen(lat, lon);
 
     // Trigger Almanac & AI Insights
     loadAlmanac(data);
@@ -742,13 +1462,14 @@ async function loadWeather() {
 initSettings();
 
 // Initialize unit buttons based on saved preference
-elements.buttons.unitF.classList.toggle('active', unit === 'F');
-elements.buttons.unitC.classList.toggle('active', unit === 'C');
+applyUnitButtons();
 
 loadData();
 loadWeather();
-setInterval(loadData, 60000); // Reduced from 20s to 60s
+loadLocationStrip();
+setInterval(loadData, 60000);
 setInterval(loadWeather, 900000);
+setInterval(loadLocationStrip, 15 * 60 * 1000);
 
 // Export function
 function exportData() {
@@ -764,18 +1485,6 @@ function exportData() {
 // Event Listeners
 const exportBtn = document.getElementById('exportBtn');
 if (exportBtn) exportBtn.onclick = exportData;
-elements.buttons.refresh.onclick = loadData;
-elements.buttons.unitF.onclick = () => {
-  unit='F';
-  localStorage.setItem(UNIT_KEY, 'F');
-  elements.buttons.unitF.classList.add('active');
-  elements.buttons.unitC.classList.remove('active');
-  loadData();
-};
-elements.buttons.unitC.onclick = () => {
-  unit='C';
-  localStorage.setItem(UNIT_KEY, 'C');
-  elements.buttons.unitC.classList.add('active');
-  elements.buttons.unitF.classList.remove('active');
-  loadData();
-};
+if (elements.buttons.refresh) elements.buttons.refresh.onclick = loadData;
+elements.buttons.unitF.onclick = () => setUnit('F');
+elements.buttons.unitC.onclick = () => setUnit('C');

@@ -3,7 +3,7 @@ r"""
 Local server with history logging, sparklines, and Optimized Open-Meteo Almanac.
 """
 
-import os, csv, json, time, sys
+import os, csv, json, time, sys, threading
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any
 from collections import deque
@@ -22,6 +22,15 @@ LOG_PATH = os.path.join(HERE, "govee_readings.csv")
 ALMANAC_CACHE_FILE = os.path.join(HERE, "almanac_cache.json")
 INSIGHTS_CACHE_FILE = os.path.join(HERE, "insights_cache.json")
 INSIGHTS_CACHE_HOURS = 24  # Cache for 24 hours so insights refresh daily
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
+READINGS_REFRESH_SECONDS = 45
+READINGS_STALE_SECONDS = 300
+_readings_cache = None
+_readings_cache_time = 0.0
+_readings_last_success_time = 0.0
+_readings_last_error = None
+_readings_refreshing = False
+_readings_lock = threading.Lock()
 
 # ---------------------------------------------------------------------
 # FLASK APP
@@ -75,14 +84,24 @@ def get_state(sku: str, device: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------
 # NORMALIZATION
 # ---------------------------------------------------------------------
-def normalize_temp_c_from_raw(raw):
+def normalize_temp_f_from_raw(raw):
     if raw is None: return None
     try:
         v = float(raw)
     except: return None
-    if v > 1000: return round(v / 100.0, 2)
-    if v > 100: return round(v / 10.0, 2)
+    # H5110 sensorTemperature values from the Govee router API are already
+    # Fahrenheit for this account. Only de-scale large integer-style payloads.
+    if v > 2000: v = v / 100.0
+    elif v > 200: v = v / 10.0
     return round(v, 2)
+
+def f_to_c(temp_f):
+    if temp_f is None: return None
+    return round((temp_f - 32) * 5.0 / 9.0, 2)
+
+def c_to_f(temp_c):
+    if temp_c is None: return None
+    return round((temp_c * 9.0 / 5.0) + 32, 2)
 
 def normalize_humidity(raw):
     if raw is None: return None
@@ -92,6 +111,29 @@ def normalize_humidity(raw):
     if v > 100: v = v / 10.0 if v <= 1000 else v / 100.0
     v = max(0, min(v, 100))
     return round(v, 1)
+
+def parse_insights_response(response_text):
+    text = (response_text or "").strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("[")
+        end = text.rfind("]")
+        if start == -1 or end == -1 or end <= start:
+            raise
+        parsed = json.loads(text[start:end + 1])
+
+    if not isinstance(parsed, list):
+        return [str(parsed)]
+    return [str(item) for item in parsed if item]
 
 # ---------------------------------------------------------------------
 # HISTORY LOGGING
@@ -150,6 +192,52 @@ def _read_history(limit_per_device: int = 100):
         return {}
     return out
 
+def _iso_from_timestamp(ts):
+    if not ts:
+        return None
+    return datetime.fromtimestamp(ts, timezone.utc).astimezone().isoformat(timespec="seconds")
+
+def _latest_readings_from_log():
+    if not os.path.exists(LOG_PATH):
+        return None
+
+    latest = {}
+    try:
+        with open(LOG_PATH, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                dev = row.get("device")
+                if not dev:
+                    continue
+                try:
+                    temp_c = float(row["temp_c"]) if row.get("temp_c") else None
+                    humidity = float(row["humidity"]) if row.get("humidity") else None
+                except Exception:
+                    temp_c = None
+                    humidity = None
+
+                latest[dev] = {
+                    "name": row.get("name") or "Unknown",
+                    "sku": None,
+                    "device": dev,
+                    "temp_c": temp_c,
+                    "temp_f": c_to_f(temp_c),
+                    "humidity": humidity,
+                    "battery": None,
+                    "timestamp": row.get("timestamp")
+                }
+    except Exception as e:
+        log(f"Latest readings cache read error: {e}")
+        return None
+
+    if not latest:
+        return None
+    return {
+        "items": list(latest.values()),
+        "note": "Showing last logged readings while refreshing",
+        "source": "log"
+    }
+
 # ---------------------------------------------------------------------
 # API ROUTES
 # ---------------------------------------------------------------------
@@ -172,11 +260,12 @@ def _fetch_sensor_data(sensor, ts):
             if inst == "sensorTemperature": raw_temp = val
             if inst == "sensorHumidity": raw_hum = val
 
-        temp_c = normalize_temp_c_from_raw(raw_temp)
+        temp_f = normalize_temp_f_from_raw(raw_temp)
+        temp_c = f_to_c(temp_f)
         humidity = normalize_humidity(raw_hum)
 
         # Debug logging for blank temps
-        if temp_c is None and raw_temp is not None:
+        if temp_f is None and raw_temp is not None:
             log(f"WARNING: {sensor['name']} - Temperature normalization failed. Raw value: {raw_temp}")
 
         item = {
@@ -184,7 +273,7 @@ def _fetch_sensor_data(sensor, ts):
             "sku": sensor["sku"],
             "device": sensor["device"],
             "temp_c": temp_c,
-            "temp_f": None,
+            "temp_f": temp_f,
             "humidity": humidity,
             "battery": next((c["state"]["value"] for c in caps if c.get("instance")=="battery" and "state" in c), None),
             "timestamp": ts
@@ -195,8 +284,7 @@ def _fetch_sensor_data(sensor, ts):
         log(f"ERROR fetching {sensor['name']}: {e}")
         return None, f"{sensor['name']}: {e}"
 
-@app.get("/api/readings")
-def api_readings():
+def _poll_readings_live():
     import time as time_module
     start_time = time_module.time()
 
@@ -204,7 +292,7 @@ def api_readings():
         devices = fetch_devices()
     except Exception as e:
         log(f"ERROR: Failed to fetch devices: {e}")
-        return jsonify({"items": [], "error": str(e)}), 500
+        return {"items": [], "error": str(e)}, 500
 
     sensors = _collect_sensor_devices(devices)
     log(f"Found {len(sensors)} sensors to poll")
@@ -229,9 +317,132 @@ def api_readings():
 
     if len(items) == 0 and len(errs) > 0:
         log(f"WARNING: All sensors failed! Errors: {errs}")
-        return jsonify({"items": [], "error": "All sensors failed", "note": "; ".join(errs[:3])}), 500
+        return {"items": [], "error": "All sensors failed", "note": "; ".join(errs[:3])}, 500
 
-    return jsonify({"items": items, "note": (" | ".join(errs) if errs else "")})
+    return {"items": items, "note": (" | ".join(errs) if errs else "")}, 200
+
+def _store_readings_cache(payload):
+    global _readings_cache, _readings_cache_time, _readings_last_success_time, _readings_last_error
+    now_ts = time.time()
+    payload = dict(payload)
+    payload["source"] = "live"
+    payload["last_live_at"] = _iso_from_timestamp(now_ts)
+    with _readings_lock:
+        _readings_cache = payload
+        _readings_cache_time = now_ts
+        _readings_last_success_time = now_ts
+        _readings_last_error = None
+
+def _refresh_readings_cache():
+    global _readings_refreshing, _readings_last_error
+    try:
+        payload, status = _poll_readings_live()
+        if status == 200 and payload.get("items"):
+            _store_readings_cache(payload)
+        elif status != 200:
+            with _readings_lock:
+                _readings_last_error = payload.get("error") or payload.get("note") or f"HTTP {status}"
+    finally:
+        with _readings_lock:
+            _readings_refreshing = False
+
+def _start_readings_refresh():
+    global _readings_refreshing
+    with _readings_lock:
+        if _readings_refreshing:
+            return
+        _readings_refreshing = True
+    threading.Thread(target=_refresh_readings_cache, daemon=True).start()
+
+def _cached_readings_payload():
+    now_ts = time.time()
+    with _readings_lock:
+        cache = _readings_cache
+        age = now_ts - _readings_cache_time if cache else None
+        refreshing = _readings_refreshing
+        last_success = _readings_last_success_time
+        last_error = _readings_last_error
+
+    if cache:
+        payload = dict(cache)
+        payload["refreshing"] = refreshing
+        payload["last_live_age_seconds"] = round(now_ts - last_success, 1) if last_success else None
+        payload["last_error"] = last_error
+        return payload, age
+
+    payload = _latest_readings_from_log()
+    if payload:
+        payload["refreshing"] = refreshing
+        payload["last_live_age_seconds"] = None
+        payload["last_error"] = last_error
+        return payload, READINGS_REFRESH_SECONDS
+    return None, None
+
+def _background_readings_loop():
+    time.sleep(2)
+    while True:
+        _start_readings_refresh()
+        time.sleep(READINGS_REFRESH_SECONDS)
+
+@app.get("/api/readings")
+def api_readings():
+    force_refresh = request.args.get("refresh") == "1"
+    cached, age = _cached_readings_payload()
+
+    if not force_refresh and cached and age is not None:
+        if age < READINGS_REFRESH_SECONDS:
+            cached["cached"] = True
+            cached["age_seconds"] = round(age, 1)
+            return jsonify(cached)
+
+        if age < READINGS_STALE_SECONDS:
+            _start_readings_refresh()
+            cached["cached"] = True
+            cached["refreshing"] = True
+            cached["age_seconds"] = round(age, 1)
+            return jsonify(cached)
+
+    payload, status = _poll_readings_live()
+    if status == 200 and payload.get("items"):
+        _store_readings_cache(payload)
+    return (jsonify(payload), status) if status != 200 else jsonify(payload)
+
+@app.get("/api/status")
+def api_status():
+    now_ts = time.time()
+    with _readings_lock:
+        cache_age = now_ts - _readings_cache_time if _readings_cache else None
+        live_age = now_ts - _readings_last_success_time if _readings_last_success_time else None
+        refreshing = _readings_refreshing
+        last_error = _readings_last_error
+
+    insights_cached = False
+    insights_timestamp = None
+    if os.path.exists(INSIGHTS_CACHE_FILE):
+        try:
+            with open(INSIGHTS_CACHE_FILE, "r", encoding="utf-8") as f:
+                cache = json.load(f)
+            insights_cached = bool(cache.get("insights"))
+            insights_timestamp = cache.get("timestamp")
+        except Exception:
+            pass
+
+    return jsonify({
+        "govee": {
+            "cached": _readings_cache is not None,
+            "cache_age_seconds": round(cache_age, 1) if cache_age is not None else None,
+            "last_live_at": _iso_from_timestamp(_readings_last_success_time),
+            "last_live_age_seconds": round(live_age, 1) if live_age is not None else None,
+            "refreshing": refreshing,
+            "last_error": last_error,
+            "refresh_interval_seconds": READINGS_REFRESH_SECONDS
+        },
+        "ai": {
+            "anthropic_model": ANTHROPIC_MODEL,
+            "insights_cached": insights_cached,
+            "insights_timestamp": insights_timestamp
+        }
+    })
 
 @app.get("/api/history")
 def api_history():
@@ -480,7 +691,7 @@ Return ONLY a JSON array of strings, like:
     try:
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
-            model="claude-3-haiku-20240307",
+            model=ANTHROPIC_MODEL,
             max_tokens=500,
             messages=[
                 {"role": "user", "content": prompt}
@@ -489,11 +700,7 @@ Return ONLY a JSON array of strings, like:
 
         response_text = message.content[0].text
 
-        # Parse JSON response
-        insights = json.loads(response_text)
-
-        if not isinstance(insights, list):
-            insights = [response_text]
+        insights = parse_insights_response(response_text)
 
     except json.JSONDecodeError as e:
         log(f"JSON parse error: {e}")
@@ -525,4 +732,5 @@ Return ONLY a JSON array of strings, like:
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8000"))
     log(f"Starting server on port {port}...")
+    threading.Thread(target=_background_readings_loop, daemon=True).start()
     app.run(host="0.0.0.0", port=port, debug=False)
