@@ -25,13 +25,55 @@ let _locationData = null;
 let unit = localStorage.getItem(UNIT_KEY) || 'F'; // Default unit
 let autoTimer = null;
 
-// SVG Paths for Weather Codes
+// Inline weather illustrations. Kept dependency-free so forecast tiles render offline.
 const WEATHER_ICONS = {
-  clear: '<path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-2a1 1 0 0 1 1-1h.01a1 1 0 0 1 0 2H13a1 1 0 0 1-1-1zm0 14a1 1 0 0 1 1-1h.01a1 1 0 0 1 0 2H13a1 1 0 0 1-1-1zm7-7a1 1 0 0 1-1 1h-1.99a1 1 0 0 1 0-2H19a1 1 0 0 1 1 1zM5 12a1 1 0 0 1-1 1H2.01a1 1 0 0 1 0-2H4a1 1 0 0 1 1 1zm11.95-4.95a1 1 0 0 1 0 1.41l-1.41 1.42a1 1 0 0 1-1.42-1.42l1.42-1.41a1 1 0 0 1 1.41 0zm-9.9 9.9a1 1 0 0 1 0 1.41l-1.41 1.42a1 1 0 0 1-1.42-1.42l1.42-1.41a1 1 0 0 1 1.41 0zm0-9.9a1 1 0 0 1-1.41 0l-1.42-1.41a1 1 0 0 1 1.42-1.42l1.41 1.42a1 1 0 0 1 0 1.41zm9.9 9.9a1 1 0 0 1-1.41 0l-1.42-1.41a1 1 0 0 1 1.42-1.42l1.41 1.42a1 1 0 0 1 0 1.41z"/>',
-  cloud: '<path d="M17 10h-1.09c-.55-2.7-2.91-4.72-5.66-4.72A5.76 5.76 0 0 0 4.5 10.73c0 .09 0 .18.01.27C2.01 11.58 0 13.61 0 16.08c0 2.76 2.24 5 5 5h12c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96A5.45 5.45 0 0 0 17 10z"/>',
-  rain: '<path d="M16 11h-1.09c-.55-2.7-2.91-4.72-5.66-4.72A5.76 5.76 0 0 0 3.5 11.73c0 .09 0 .18.01.27C1.01 12.58-1 14.61-1 17.08c0 2.76 2.24 5 5 5h12c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96A5.45 5.45 0 0 0 16 11zm-5 14v3m-4-3v3m8-3v3"/>',
-  snow: '<path d="M12 2L12 22M2 12L22 12M5 5L19 19M5 19L19 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-  storm: '<path d="M17 10h-1.09c-.55-2.7-2.91-4.72-5.66-4.72A5.76 5.76 0 0 0 4.5 10.73c0 .09 0 .18.01.27C2.01 11.58 0 13.61 0 16.08c0 2.76 2.24 5 5 5h12c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96A5.45 5.45 0 0 0 17 10z"/><polygon points="11 14 13 17 10 17 12 22 8 22 10 18 7 18" fill="currentColor"/>'
+  clear: `
+    <g class="sun-rays" stroke="#ffd166" stroke-width="3" stroke-linecap="round">
+      <path d="M32 5v7"/><path d="M32 52v7"/><path d="M5 32h7"/><path d="M52 32h7"/>
+      <path d="m13 13 5 5"/><path d="m46 46 5 5"/><path d="m51 13-5 5"/><path d="m18 46-5 5"/>
+    </g>
+    <circle cx="32" cy="32" r="14" fill="#ffb703"/>
+    <circle cx="27" cy="27" r="10" fill="#ffe066" opacity=".95"/>
+    <path d="M22 39c4 6 16 6 20 0" fill="none" stroke="#fb8500" stroke-width="3" stroke-linecap="round" opacity=".55"/>`,
+  cloud: `
+    <circle cx="25" cy="32" r="12" fill="#d9f0ff"/>
+    <circle cx="38" cy="28" r="15" fill="#f4fbff"/>
+    <circle cx="48" cy="36" r="11" fill="#c8e1f2"/>
+    <path d="M17 42h32c6 0 10-4 10-9 0-5-4-9-10-9h-1C45 15 37 10 28 12c-8 1-14 8-14 16v1c-5 1-9 5-9 10 0 6 5 10 12 10Z" fill="#eef8ff"/>
+    <path d="M14 42h35c5 0 9-3 10-7 0 8-5 13-13 13H17c-7 0-12-4-12-10 0-1 0-2 1-3 1 4 4 7 8 7Z" fill="#a9c9df" opacity=".65"/>`,
+  fog: `
+    <circle cx="25" cy="28" r="11" fill="#d9f0ff"/>
+    <circle cx="39" cy="25" r="14" fill="#f4fbff"/>
+    <path d="M14 39h36c6 0 10-4 10-9 0-4-4-8-9-8h-2C46 14 38 10 30 12c-8 1-14 8-14 16-6 0-11 5-11 10 0 6 4 10 9 10Z" fill="#d7e8f2"/>
+    <g stroke="#92b8ca" stroke-width="4" stroke-linecap="round" opacity=".9">
+      <path d="M10 45h28"/><path d="M45 45h9"/><path d="M7 53h18"/><path d="M32 53h25"/>
+    </g>`,
+  rain: `
+    <circle cx="25" cy="25" r="11" fill="#d9f0ff"/>
+    <circle cx="39" cy="23" r="14" fill="#f4fbff"/>
+    <path d="M13 37h36c6 0 10-4 10-9s-4-9-10-9h-2C44 12 36 8 28 10c-8 1-14 8-14 16-6 0-11 5-11 10 0 6 4 10 10 10Z" fill="#cfe4f2"/>
+    <path d="M13 38h36c5 0 8-3 10-6-1 8-6 12-14 12H15c-6 0-11-4-12-9 2 2 5 3 10 3Z" fill="#8fb3ca" opacity=".62"/>
+    <g stroke="#4cc9f0" stroke-width="4" stroke-linecap="round">
+      <path d="M18 48 14 57"/><path d="M33 48 29 57"/><path d="M48 48 44 57"/>
+    </g>`,
+  snow: `
+    <circle cx="25" cy="25" r="11" fill="#d9f0ff"/>
+    <circle cx="39" cy="23" r="14" fill="#f8fdff"/>
+    <path d="M13 37h36c6 0 10-4 10-9s-4-9-10-9h-2C44 12 36 8 28 10c-8 1-14 8-14 16-6 0-11 5-11 10 0 6 4 10 10 10Z" fill="#dceef8"/>
+    <g stroke="#90e0ef" stroke-width="3" stroke-linecap="round">
+      <path d="M18 49v10"/><path d="M13 54h10"/><path d="m15 51 6 6"/><path d="m21 51-6 6"/>
+      <path d="M35 48v11"/><path d="M29 54h12"/><path d="m31 50 8 8"/><path d="m39 50-8 8"/>
+      <path d="M50 49v10"/><path d="M45 54h10"/>
+    </g>`,
+  storm: `
+    <circle cx="25" cy="24" r="11" fill="#b8c7da"/>
+    <circle cx="40" cy="22" r="15" fill="#d4deeb"/>
+    <path d="M13 36h36c6 0 10-4 10-9s-4-9-10-9h-2C44 11 36 7 28 9c-8 1-14 8-14 16-6 0-11 5-11 10 0 6 4 10 10 10Z" fill="#8fa4bd"/>
+    <path d="M30 37h11l-8 11h9L27 62l4-13h-8l7-12Z" fill="#ffca3a"/>
+    <path d="M41 37 33 48h9L27 62l9-18h-8l4-7h9Z" fill="#ff8f00" opacity=".72"/>
+    <g stroke="#4cc9f0" stroke-width="3.5" stroke-linecap="round" opacity=".95">
+      <path d="M15 49 11 57"/><path d="M51 47 47 55"/>
+    </g>`
 };
 
 // WMO Weather Code Descriptions
@@ -47,14 +89,14 @@ const WEATHER_DESC = {
 };
 
 function getIcon(code) {
-  let path = WEATHER_ICONS.clear;
-  if (code > 1 && code < 45) path = WEATHER_ICONS.cloud;
-  else if (code >= 45 && code < 51) path = WEATHER_ICONS.cloud;
-  else if (code >= 51 && code < 71) path = WEATHER_ICONS.rain;
-  else if (code >= 71 && code < 80) path = WEATHER_ICONS.snow;
-  else if (code >= 80 && code < 95) path = WEATHER_ICONS.rain;
-  else if (code >= 95) path = WEATHER_ICONS.storm;
-  return `<svg class="weather-icon-svg" viewBox="0 0 24 24">${path}</svg>`;
+  let type = 'clear';
+  if (code > 1 && code < 45) type = 'cloud';
+  else if (code >= 45 && code < 51) type = 'fog';
+  else if (code >= 51 && code < 71) type = 'rain';
+  else if (code >= 71 && code < 80) type = 'snow';
+  else if (code >= 80 && code < 95) type = 'rain';
+  else if (code >= 95) type = 'storm';
+  return `<svg class="weather-icon-svg weather-icon-${type}" viewBox="0 0 64 64" role="img" aria-label="${WEATHER_DESC[code] || 'Weather'}">${WEATHER_ICONS[type]}</svg>`;
 }
 
 function weatherSceneClass(code) {
@@ -84,7 +126,102 @@ function moonPhaseClass(phase) {
   return 'moon-waning-crescent';
 }
 
-function applyWeatherScene(code, daily) {
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function buildHourlyTempsByDay(hourly = {}) {
+  const byDay = new Map();
+  const times = hourly.time || [];
+  const temps = hourly.temperature_2m || [];
+
+  times.forEach((time, index) => {
+    const day = time.slice(0, 10);
+    const temp = Number(temps[index]);
+    if (!Number.isFinite(temp)) return;
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(temp);
+  });
+
+  return byDay;
+}
+
+function createTempHillSvg(dayIndex, temps, chartMin, chartMax, low, high) {
+  const values = temps.length ? temps.slice(0, 24) : [low, high];
+  const span = Math.max(1, chartMax - chartMin);
+  const points = values.map((temp, index) => {
+    const x = values.length === 1 ? 50 : 5 + (index / (values.length - 1)) * 90;
+    const y = 88 - ((temp - chartMin) / span) * 76;
+    return { x, y: clamp(y, 8, 88), temp };
+  });
+  const linePath = points.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
+  const areaPath = `${linePath} L95 92 L5 92 Z`;
+  const segmentWidth = values.length > 18 ? 2.7 : 4;
+  const segments = points.map(point => {
+    const tempNorm = clamp((point.temp - chartMin) / span, 0, 1);
+    const hue = 190 - (tempNorm * 170);
+    const height = Math.max(3, 92 - point.y);
+    return `<rect class="temp-hill-segment" x="${(point.x - (segmentWidth / 2)).toFixed(1)}" y="${point.y.toFixed(1)}" width="${segmentWidth}" height="${height.toFixed(1)}" rx="1.3" style="fill:hsl(${hue.toFixed(0)}, 88%, 62%)"></rect>`;
+  }).join('');
+  const gradientId = `tempHillGradient-${dayIndex}`;
+  const fillId = `tempHillFill-${dayIndex}`;
+
+  return `
+    <svg class="temp-hill" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="24-hour temperature profile, ${low} to ${high} degrees" role="img">
+      <defs>
+        <linearGradient id="${gradientId}" x1="0%" y1="100%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#55d6e8"></stop>
+          <stop offset="56%" stop-color="#ffd166"></stop>
+          <stop offset="100%" stop-color="#ff7a45"></stop>
+        </linearGradient>
+        <linearGradient id="${fillId}" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#ffd166" stop-opacity=".32"></stop>
+          <stop offset="100%" stop-color="#55d6e8" stop-opacity=".04"></stop>
+        </linearGradient>
+      </defs>
+      <path class="temp-hill-fill" style="fill:url(#${fillId})" d="${areaPath}"></path>
+      <g class="temp-hill-segments">${segments}</g>
+      <path class="temp-hill-line" style="stroke:url(#${gradientId})" d="${linePath}"></path>
+    </svg>`;
+}
+
+function updateSkyMotion(card, current = {}, sunrise, sunset, isDay) {
+  const windMph = Number(current.wind_speed_10m) || 0;
+  const gustMph = Number(current.wind_gusts_10m) || windMph;
+  const baseDuration = clamp(110 - (windMph * 4.4), 24, 118);
+  const gustDuration = clamp(22 - (gustMph * .38), 7, 24);
+  const gustOpacity = clamp((Math.max(gustMph, windMph) - 14) / 22, 0, .82);
+  const gustDistance = clamp(96 + (gustMph * 2.8), 116, 188);
+  const windDirection = Number(current.wind_direction_10m);
+
+  card.style.setProperty('--cloud-speed', `${baseDuration.toFixed(1)}s`);
+  card.style.setProperty('--cloud-speed-slow', `${(baseDuration * 1.34).toFixed(1)}s`);
+  card.style.setProperty('--cloud-speed-fast', `${Math.max(18, baseDuration * .72).toFixed(1)}s`);
+  card.style.setProperty('--cloud-speed-night-drift', `${(baseDuration * 1.68).toFixed(1)}s`);
+  card.style.setProperty('--cloud-speed-night-wisp', `${(baseDuration * 1.5).toFixed(1)}s`);
+  card.style.setProperty('--gust-speed', `${gustDuration.toFixed(1)}s`);
+  card.style.setProperty('--gust-opacity', gustOpacity.toFixed(2));
+  card.style.setProperty('--gust-distance', `${gustDistance.toFixed(1)}%`);
+
+  if (Number.isFinite(windDirection)) {
+    const eastboundWind = windDirection > 180;
+    card.style.setProperty('--cloud-direction', eastboundWind ? 'normal' : 'reverse');
+  }
+
+  if (isDay && sunrise && sunset && sunset > sunrise) {
+    const daylightProgress = clamp((Date.now() - sunrise.getTime()) / (sunset.getTime() - sunrise.getTime()), 0, 1);
+    const arc = Math.sin(daylightProgress * Math.PI);
+    const sunX = 12 + daylightProgress * 76;
+    const sunY = 72 - arc * 58;
+    card.style.setProperty('--sun-x', `${sunX.toFixed(1)}%`);
+    card.style.setProperty('--sun-y', `${sunY.toFixed(1)}%`);
+  } else {
+    card.style.setProperty('--sun-x', '78%');
+    card.style.setProperty('--sun-y', '18%');
+  }
+}
+
+function applyWeatherScene(code, daily, current) {
   const card = elements.weather.card;
   if (!card) return;
 
@@ -102,6 +239,7 @@ function applyWeatherScene(code, daily) {
   const sunset = daily?.sunset?.[0] ? new Date(daily.sunset[0]) : null;
   const isDay = sunrise && sunset ? now >= sunrise && now <= sunset : true;
   card.classList.add(isDay ? 'scene-day' : 'scene-night');
+  updateSkyMotion(card, current, sunrise, sunset, isDay);
 
   if (!isDay) {
     card.classList.add(moonPhaseClass(moonPhaseFraction(now)));
@@ -142,6 +280,13 @@ const elements = {
     source: document.getElementById('pollenSource'),
     detail: document.getElementById('pollenDetail'),
     types: document.getElementById('pollenTypes')
+  },
+  usActivity: {
+    list: document.getElementById('usWeatherActivity'),
+    map: document.getElementById('usActivityMap'),
+    states: document.getElementById('usMapStates'),
+    markers: document.getElementById('usActivityMarkers'),
+    updated: document.getElementById('usActivityUpdated')
   }
 };
 
@@ -368,6 +513,419 @@ function alertRank(alert) {
   if (event.includes('watch')) return 3;
   if (event.includes('advisory')) return 4;
   return 5;
+}
+
+const US_STATE_NAMES = {
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California',
+  CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware', FL: 'Florida', GA: 'Georgia',
+  HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa',
+  KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland',
+  MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi',
+  MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada', NH: 'New Hampshire',
+  NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York', NC: 'North Carolina',
+  ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma', OR: 'Oregon', PA: 'Pennsylvania',
+  RI: 'Rhode Island', SC: 'South Carolina', SD: 'South Dakota', TN: 'Tennessee',
+  TX: 'Texas', UT: 'Utah', VT: 'Vermont', VA: 'Virginia', WA: 'Washington',
+  WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming', DC: 'DC', PR: 'Puerto Rico',
+  VI: 'Virgin Islands', GU: 'Guam', AS: 'American Samoa', MP: 'Northern Marianas'
+};
+
+const FIPS_TO_STATE = {
+  '01': 'AL', '02': 'AK', '04': 'AZ', '05': 'AR', '06': 'CA', '08': 'CO',
+  '09': 'CT', '10': 'DE', '11': 'DC', '12': 'FL', '13': 'GA', '15': 'HI',
+  '16': 'ID', '17': 'IL', '18': 'IN', '19': 'IA', '20': 'KS', '21': 'KY',
+  '22': 'LA', '23': 'ME', '24': 'MD', '25': 'MA', '26': 'MI', '27': 'MN',
+  '28': 'MS', '29': 'MO', '30': 'MT', '31': 'NE', '32': 'NV', '33': 'NH',
+  '34': 'NJ', '35': 'NM', '36': 'NY', '37': 'NC', '38': 'ND', '39': 'OH',
+  '40': 'OK', '41': 'OR', '42': 'PA', '44': 'RI', '45': 'SC', '46': 'SD',
+  '47': 'TN', '48': 'TX', '49': 'UT', '50': 'VT', '51': 'VA', '53': 'WA',
+  '54': 'WV', '55': 'WI', '56': 'WY'
+};
+
+let usMapCenters = new Map();
+let usMapReady = null;
+
+const EXTREME_EVENT_KEYWORDS = [
+  'tornado', 'severe thunderstorm', 'flash flood', 'flood', 'hurricane', 'tropical storm',
+  'storm surge', 'blizzard', 'winter storm', 'ice storm', 'snow squall', 'high wind',
+  'red flag', 'fire weather', 'excessive heat', 'extreme heat', 'freeze', 'tsunami',
+  'volcano', 'ashfall', 'coastal flood', 'surf', 'avalanche'
+];
+
+const MARINE_UGC_STATE_PREFIXES = {
+  PK: 'AK',
+  PH: 'HI'
+};
+
+function stateCodesFromAlert(alert) {
+  const codes = new Set();
+  (alert.geocode?.UGC || []).forEach(code => {
+    const prefix = String(code).slice(0, 2).toUpperCase();
+    const state = MARINE_UGC_STATE_PREFIXES[prefix] || prefix;
+    if (US_STATE_NAMES[state]) codes.add(state);
+  });
+  const areaText = String(alert.areaDesc || '');
+  Object.keys(US_STATE_NAMES).forEach(state => {
+    const name = US_STATE_NAMES[state];
+    const hasStateCode = new RegExp(`,\\s*${state}\\b`).test(areaText);
+    const hasStateName = name.length > 2 && new RegExp(`\\b${name.replace(/\s+/g, '\\s+')}\\b`, 'i').test(areaText);
+    if (hasStateCode || hasStateName) codes.add(state);
+  });
+  return [...codes];
+}
+
+function stateListLabel(codes) {
+  const sorted = [...new Set(codes)].sort((a, b) => {
+    if (a === 'AK' || a === 'HI') return -1;
+    if (b === 'AK' || b === 'HI') return 1;
+    return a.localeCompare(b);
+  });
+  if (!sorted.length) return 'regional areas';
+  if (sorted.length <= 3) return sorted.map(code => US_STATE_NAMES[code] || code).join(', ');
+  return `${sorted.slice(0, 3).map(code => US_STATE_NAMES[code] || code).join(', ')} + ${sorted.length - 3} more`;
+}
+
+function decodeTopoArcs(topology) {
+  const [scaleX, scaleY] = topology.transform.scale;
+  const [translateX, translateY] = topology.transform.translate;
+  return topology.arcs.map(arc => {
+    let x = 0;
+    let y = 0;
+    return arc.map(([dx, dy]) => {
+      x += dx;
+      y += dy;
+      return [x * scaleX + translateX, y * scaleY + translateY];
+    });
+  });
+}
+
+function resolveTopoArc(arcs, arcIndex) {
+  const reversed = arcIndex < 0;
+  const arc = arcs[reversed ? -arcIndex - 1 : arcIndex] || [];
+  return reversed ? [...arc].reverse() : arc;
+}
+
+function collectTopoRing(arcs, ring) {
+  const points = [];
+  ring.forEach((arcIndex, index) => {
+    const arc = resolveTopoArc(arcs, arcIndex);
+    points.push(...(index ? arc.slice(1) : arc));
+  });
+  return points;
+}
+
+function topoGeometryToPaths(geometry, arcs) {
+  const polygons = geometry.type === 'Polygon' ? [geometry.arcs] : geometry.arcs;
+  return polygons.map(polygon => (
+    polygon.map(ring => {
+      const points = collectTopoRing(arcs, ring);
+      if (!points.length) return '';
+      return `M${points.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L')}Z`;
+    }).join('')
+  ));
+}
+
+function stateCenterFromPaths(paths) {
+  const values = paths.join(' ').match(/-?\d+(?:\.\d+)?/g)?.map(Number) || [];
+  if (values.length < 2) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < values.length; i += 2) {
+    minX = Math.min(minX, values[i]);
+    maxX = Math.max(maxX, values[i]);
+    minY = Math.min(minY, values[i + 1]);
+    maxY = Math.max(maxY, values[i + 1]);
+  }
+  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+}
+
+async function renderUsActivityMap() {
+  if (!elements.usActivity.map || !elements.usActivity.states) return;
+  if (usMapReady) return usMapReady;
+
+  usMapReady = fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/states-albers-10m.json')
+    .then(res => {
+      if (!res.ok) throw new Error(`US map returned ${res.status}`);
+      return res.json();
+    })
+    .then(topology => {
+      const arcs = decodeTopoArcs(topology);
+      const bbox = topology.bbox || [-58, 13, 958, 607];
+      elements.usActivity.map.setAttribute('viewBox', `${bbox[0]} ${bbox[1]} ${bbox[2] - bbox[0]} ${bbox[3] - bbox[1]}`);
+
+      const paths = [];
+      usMapCenters = new Map();
+      (topology.objects.states?.geometries || []).forEach(geometry => {
+        const code = FIPS_TO_STATE[String(geometry.id).padStart(2, '0')];
+        if (!code) return;
+        const statePaths = topoGeometryToPaths(geometry, arcs);
+        const center = stateCenterFromPaths(statePaths);
+        if (center) usMapCenters.set(code, center);
+        paths.push(`<path class="us-map-state" data-state="${code}" d="${statePaths.join('')}"><title>${escapeHtml(US_STATE_NAMES[code] || code)}</title></path>`);
+      });
+      elements.usActivity.states.innerHTML = paths.join('');
+    })
+    .catch(e => {
+      console.warn('US map unavailable', e);
+      elements.usActivity.states.innerHTML = '';
+    });
+
+  return usMapReady;
+}
+
+function markerClassForRank(rank) {
+  if (rank <= 3) return 'extreme';
+  if (rank <= 12) return 'severe';
+  if (rank <= 28) return 'watch';
+  return 'advisory';
+}
+
+function buildActivityMarkers(activity) {
+  const states = new Map();
+  activity.forEach((group, groupIndex) => {
+    group.states.forEach(code => {
+      const point = usMapCenters.get(code);
+      if (!point) return;
+      const state = states.get(code) || {
+        code,
+        point,
+        count: 0,
+        rank: group.rank,
+        events: new Set(),
+        groups: []
+      };
+      state.count += group.count;
+      state.rank = Math.min(state.rank, group.rank);
+      state.events.add(group.event);
+      state.groups.push(group.index || groupIndex + 1);
+      states.set(code, state);
+    });
+  });
+
+  return [...states.values()]
+    .sort((a, b) => a.rank - b.rank || b.count - a.count)
+    .map(state => {
+      const radius = clamp(6 + Math.sqrt(state.count) * 2.4, 8, 20);
+      const events = [...state.events].slice(0, 2).join(', ');
+      const groups = [...new Set(state.groups)].join(',');
+      return `
+        <g class="us-map-marker ${markerClassForRank(state.rank)}" data-state="${escapeHtml(state.code)}" data-groups="${escapeHtml(groups)}" tabindex="0" role="button" aria-label="${escapeHtml(US_STATE_NAMES[state.code] || state.code)} weather activity" transform="translate(${state.point.x.toFixed(1)} ${state.point.y.toFixed(1)})">
+          <circle class="marker-pulse" r="${(radius + 5).toFixed(1)}"></circle>
+          <circle class="marker-dot" r="${radius.toFixed(1)}"></circle>
+          <text y="4">${escapeHtml(state.code)}</text>
+          <title>${escapeHtml(US_STATE_NAMES[state.code] || state.code)}: ${escapeHtml(events)}</title>
+        </g>`;
+    }).join('');
+}
+
+function isInterestingNationalAlert(alert) {
+  const event = (alert.event || '').toLowerCase();
+  const severity = (alert.severity || '').toLowerCase();
+  const urgency = (alert.urgency || '').toLowerCase();
+  return severity === 'extreme' ||
+    severity === 'severe' ||
+    urgency === 'immediate' ||
+    event.includes('warning') ||
+    event.includes('watch') ||
+    EXTREME_EVENT_KEYWORDS.some(keyword => event.includes(keyword));
+}
+
+function nationalAlertScore(alert) {
+  const event = (alert.event || '').toLowerCase();
+  let score = alertRank(alert) * 10;
+  if (event.includes('tornado')) score -= 8;
+  if (event.includes('flash flood')) score -= 6;
+  if (event.includes('hurricane') || event.includes('tropical')) score -= 6;
+  if (event.includes('tsunami') || event.includes('volcano')) score -= 6;
+  if (stateCodesFromAlert(alert).some(code => code === 'AK' || code === 'HI')) score -= 2;
+  return score;
+}
+
+function cwaFromNationalAlert(alert) {
+  const params = alert.parameters || {};
+  const vtec = params.VTEC?.find(Boolean) || '';
+  const awips = params.AWIPSidentifier?.find(Boolean) || '';
+  const wmo = params.WMOidentifier?.find(Boolean) || '';
+  const vtecMatch = vtec.match(/\.([KP][A-Z]{3})\./);
+  const wmoMatch = wmo.match(/\b([KP][A-Z]{3})\b/);
+  const awipsMatch = awips.match(/[A-Z]{3}$/);
+
+  const office = vtecMatch?.[1] || wmoMatch?.[1];
+  if (office) return office.slice(1).toUpperCase();
+  return (awipsMatch?.[0] || 'USA').toUpperCase();
+}
+
+function buildNationalWeatherAlertUrl(alert) {
+  if (alert.event) {
+    const params = new URLSearchParams({
+      cwa: cwaFromNationalAlert(alert),
+      wwa: alert.event
+    });
+    return `https://forecast.weather.gov/wwamap/wwatxtget.php?${params.toString()}`;
+  }
+
+  const featureUrl = alert._featureId || alert['@id'];
+  if (featureUrl && /^https?:\/\//i.test(featureUrl)) return featureUrl;
+  if (alert.id) return `https://api.weather.gov/alerts/${encodeURIComponent(alert.id)}`;
+  return 'https://www.weather.gov/alerts';
+}
+
+function simplifyNationalAlertGroup(group) {
+  const states = stateListLabel(group.states);
+  const countText = group.count === 1 ? '1 active area' : `${group.count} active areas`;
+  const sampleArea = group.sampleArea ? ` Example: ${group.sampleArea}.` : '';
+  const marker = group.index ? `<em>${group.index}</em>` : '';
+  const stateCodes = group.states.join(',');
+  const detailUrl = escapeHtml(group.detailUrl || 'https://www.weather.gov/alerts');
+  return `<li data-group="${escapeHtml(group.index || '')}" data-states="${escapeHtml(stateCodes)}">
+    <a href="${detailUrl}" target="_blank" rel="noopener noreferrer">
+      ${marker}<strong>${escapeHtml(group.event)}</strong> in ${escapeHtml(states)}<span>${escapeHtml(countText)}.${escapeHtml(sampleArea)}</span>
+    </a>
+  </li>`;
+}
+
+function clearUsActivityHighlight() {
+  document.querySelectorAll('.us-map-marker.is-linked, .us-activity-list li.is-linked')
+    .forEach(el => el.classList.remove('is-linked'));
+}
+
+function highlightUsActivity({ state = '', group = '' } = {}) {
+  clearUsActivityHighlight();
+  const groups = group ? String(group).split(',').filter(Boolean) : [];
+
+  if (state) {
+    document.querySelectorAll('.us-map-marker').forEach(marker => {
+      if (marker.dataset.state === state) marker.classList.add('is-linked');
+    });
+    document.querySelectorAll('.us-activity-list li').forEach(item => {
+      const states = (item.dataset.states || '').split(',');
+      if (states.includes(state)) item.classList.add('is-linked');
+    });
+  }
+
+  groups.forEach(groupId => {
+    document.querySelectorAll('.us-activity-list li').forEach(item => {
+      if (item.dataset.group === groupId) item.classList.add('is-linked');
+    });
+  });
+
+  if (group) {
+    document.querySelectorAll('.us-map-marker').forEach(marker => {
+      const markerGroups = (marker.dataset.groups || '').split(',');
+      if (groups.some(groupId => markerGroups.includes(groupId))) marker.classList.add('is-linked');
+    });
+  }
+}
+
+function bindUsActivityInteractions() {
+  if (!elements.usActivity.map || !elements.usActivity.list || elements.usActivity.map.dataset.hoverBound) return;
+  elements.usActivity.map.dataset.hoverBound = 'true';
+
+  const showMarkerLink = event => {
+    const marker = event.target.closest?.('.us-map-marker');
+    if (!marker) return;
+    highlightUsActivity({ state: marker.dataset.state, group: marker.dataset.groups });
+  };
+  const hideMapLink = event => {
+    if (!event.relatedTarget || !elements.usActivity.map.contains(event.relatedTarget)) clearUsActivityHighlight();
+  };
+  const showItemLink = event => {
+    const item = event.target.closest?.('.us-activity-list li[data-group]');
+    if (!item) return;
+    highlightUsActivity({ group: item.dataset.group });
+  };
+  const hideListLink = event => {
+    if (!event.relatedTarget || !elements.usActivity.list.contains(event.relatedTarget)) clearUsActivityHighlight();
+  };
+
+  elements.usActivity.map.addEventListener('pointerover', showMarkerLink);
+  elements.usActivity.map.addEventListener('mouseover', showMarkerLink);
+  elements.usActivity.map.addEventListener('pointerout', hideMapLink);
+  elements.usActivity.map.addEventListener('mouseout', hideMapLink);
+  elements.usActivity.map.addEventListener('focusin', event => {
+    const marker = event.target.closest?.('.us-map-marker');
+    if (marker) highlightUsActivity({ state: marker.dataset.state, group: marker.dataset.groups });
+  });
+  elements.usActivity.map.addEventListener('focusout', clearUsActivityHighlight);
+
+  elements.usActivity.list.addEventListener('pointerover', showItemLink);
+  elements.usActivity.list.addEventListener('mouseover', showItemLink);
+  elements.usActivity.list.addEventListener('pointerout', hideListLink);
+  elements.usActivity.list.addEventListener('mouseout', hideListLink);
+  elements.usActivity.list.addEventListener('focusin', event => {
+    const item = event.target.closest?.('.us-activity-list li[data-group]');
+    if (item) highlightUsActivity({ group: item.dataset.group });
+  });
+  elements.usActivity.list.addEventListener('focusout', clearUsActivityHighlight);
+}
+
+async function loadUsWeatherActivity() {
+  if (!elements.usActivity.list) return;
+  bindUsActivityInteractions();
+
+  elements.usActivity.list.innerHTML = '<li>Scanning active national weather alerts...</li>';
+  if (elements.usActivity.markers) elements.usActivity.markers.innerHTML = '';
+  if (elements.usActivity.updated) elements.usActivity.updated.textContent = 'Checking NWS';
+
+  try {
+    await renderUsActivityMap();
+    const res = await fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert', {
+      headers: { Accept: 'application/geo+json' }
+    });
+    if (!res.ok) throw new Error(`National alerts API returned ${res.status}`);
+
+    const data = await res.json();
+    const groups = new Map();
+    (data.features || [])
+      .map(feature => ({ ...(feature.properties || {}), _featureId: feature.id }))
+      .filter(alert => alert.event && isInterestingNationalAlert(alert))
+      .forEach(alert => {
+        const event = alert.event.replace(/\s+/g, ' ').trim();
+        const states = stateCodesFromAlert(alert);
+        const key = event;
+        const current = groups.get(key) || {
+          event,
+          states: new Set(),
+          count: 0,
+          rank: nationalAlertScore(alert),
+          sampleArea: '',
+          detailUrl: ''
+        };
+        states.forEach(state => current.states.add(state));
+        current.count += 1;
+        current.rank = Math.min(current.rank, nationalAlertScore(alert));
+        if (!current.sampleArea && alert.areaDesc) {
+          current.sampleArea = String(alert.areaDesc).split(';').slice(0, 2).join(', ');
+        }
+        if (!current.detailUrl) current.detailUrl = buildNationalWeatherAlertUrl(alert);
+        groups.set(key, current);
+      });
+
+    const activity = [...groups.values()]
+      .map(group => ({ ...group, states: [...group.states] }))
+      .sort((a, b) => a.rank - b.rank || b.count - a.count)
+      .slice(0, 6)
+      .map((group, index) => ({ ...group, index: index + 1 }));
+
+    if (!activity.length) {
+      elements.usActivity.list.innerHTML = '<li>No major active US weather alerts are standing out right now.</li>';
+      if (elements.usActivity.markers) elements.usActivity.markers.innerHTML = '';
+    } else {
+      elements.usActivity.list.innerHTML = activity.map(simplifyNationalAlertGroup).join('');
+      if (elements.usActivity.markers) elements.usActivity.markers.innerHTML = buildActivityMarkers(activity);
+    }
+
+    if (elements.usActivity.updated) {
+      elements.usActivity.updated.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+    }
+  } catch (e) {
+    console.warn('US weather activity unavailable', e);
+    elements.usActivity.list.innerHTML = '<li>National weather activity is unavailable right now.</li>';
+    if (elements.usActivity.markers) elements.usActivity.markers.innerHTML = '';
+    if (elements.usActivity.updated) elements.usActivity.updated.textContent = 'NWS unavailable';
+  }
 }
 
 function formatAlertTime(value) {
@@ -1146,7 +1704,6 @@ async function loadAlmanac(weatherData) {
                 <span class="hist-year">${item.year}</span>
                 <div class="hist-vals">
                   <span style="color:${lowColor}; font-weight:600;">${Math.round(item.low)}°</span>
-                  <span style="opacity:0.3; margin:0 2px;">/</span>
                   <span>${Math.round(item.high)}°</span>
                 </div>
               </div>
@@ -1392,7 +1949,7 @@ async function loadWeather() {
     } catch {}
   }
 
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weathercode,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode,sunrise,sunset&hourly=temperature_2m&temperature_unit=fahrenheit&windspeed_unit=mph&forecast_days=11&timezone=auto`;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weathercode,wind_speed_10m,wind_direction_10m,wind_gusts_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode,sunrise,sunset&hourly=temperature_2m&temperature_unit=fahrenheit&windspeed_unit=mph&forecast_days=11&timezone=auto`;
   
   try {
     const data = await fetch(url).then(r=>r.json());
@@ -1406,7 +1963,7 @@ async function loadWeather() {
     const code = data.current.weathercode;
     const desc = WEATHER_DESC[code] || "Unknown";
     const timeStr = new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
-    applyWeatherScene(code, data.daily);
+    applyWeatherScene(code, data.daily, data.current);
     if (elements.weather.condition) elements.weather.condition.textContent = desc.replace(' Sky', '');
     elements.weather.status.textContent = `${desc}, updated ${timeStr}`;
 
@@ -1419,7 +1976,10 @@ async function loadWeather() {
     const highs = d.temperature_2m_max.slice(0, forecastCount);
     const rangeMin = Math.min(...lows);
     const rangeMax = Math.max(...highs);
-    const rangeSpan = Math.max(1, rangeMax - rangeMin);
+    const hourlyTempsByDay = buildHourlyTempsByDay(data.hourly);
+    const chartTemps = d.time.slice(0, forecastCount).flatMap(day => hourlyTempsByDay.get(day) || []);
+    const chartMin = Math.min(rangeMin, ...(chartTemps.length ? chartTemps : lows));
+    const chartMax = Math.max(rangeMax, ...(chartTemps.length ? chartTemps : highs));
     const maxRain = Math.max(...d.precipitation_probability_max.slice(0, forecastCount));
     if (elements.weather.rainBadge) {
       elements.weather.rainBadge.textContent = maxRain < 5 ? 'Rain risk stays under 5%' : `Peak rain risk ${maxRain}%`;
@@ -1430,14 +1990,13 @@ async function loadWeather() {
       const dayName = i === 0 ? 'Today' : date.toLocaleDateString('en-US', {weekday:'short'});
       const low = Math.round(d.temperature_2m_min[i]);
       const high = Math.round(d.temperature_2m_max[i]);
-      const barStart = ((low - rangeMin) / rangeSpan) * 100;
-      const barWidth = Math.max(8, ((high - low) / rangeSpan) * 100);
+      const tempHill = createTempHillSvg(i, hourlyTempsByDay.get(d.time[i]) || [], chartMin, chartMax, low, high);
       html += `
         <div class="forecast-tile">
           <div class="day">${dayName}</div>
           <div class="icon">${getIcon(d.weathercode[i])}</div>
           <div class="temps"><span class="low">${low}</span><span class="high">${high}</span></div>
-          <div class="temp-range" aria-hidden="true"><span style="left:${barStart}%; width:${barWidth}%;"></span></div>
+          ${tempHill}
           <div class="rain">${d.precipitation_probability_max[i]}% rain</div>
         </div>`;
     }
@@ -1467,9 +2026,11 @@ applyUnitButtons();
 loadData();
 loadWeather();
 loadLocationStrip();
+loadUsWeatherActivity();
 setInterval(loadData, 60000);
 setInterval(loadWeather, 900000);
 setInterval(loadLocationStrip, 15 * 60 * 1000);
+setInterval(loadUsWeatherActivity, 15 * 60 * 1000);
 
 // Export function
 function exportData() {

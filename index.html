@@ -7,7 +7,7 @@
 
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=3.10">
 </head>
 
 <body>
@@ -64,10 +64,19 @@
           <span></span>
           <span></span>
         </div>
+        <div class="weather-sun" aria-hidden="true"></div>
         <div class="weather-clouds" aria-hidden="true">
           <span class="cloud-wisp cloud-wisp-a"></span>
           <span class="cloud-wisp cloud-wisp-b"></span>
           <span class="cloud-wisp cloud-wisp-c"></span>
+        </div>
+        <div class="weather-gusts" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
         </div>
         <div class="weather-topline">
           <div>
@@ -179,6 +188,30 @@
       </div>
       <div id="aiInsights" class="ai-insights-list"></div>
     </section>
+
+    <section class="us-activity-column card">
+      <div class="forecast-head">
+        <div class="section-kicker">Interesting Weather Activity in the US</div>
+        <div id="usActivityUpdated" class="rain-badge us-activity-updated">Checking NWS</div>
+      </div>
+      <div class="us-activity-layout">
+        <div class="us-map-wrap">
+          <svg id="usActivityMap" class="us-activity-map" viewBox="-58 13 1016 594" role="img" aria-label="US weather activity map">
+            <g id="usMapStates"></g>
+            <g id="usActivityMarkers"></g>
+          </svg>
+          <div class="us-map-legend" aria-label="Weather activity marker legend">
+            <span><i class="extreme"></i>Extreme</span>
+            <span><i class="severe"></i>Warning</span>
+            <span><i class="watch"></i>Watch</span>
+            <span><i class="advisory"></i>Advisory</span>
+          </div>
+        </div>
+        <ul id="usWeatherActivity" class="us-activity-list">
+          <li>Scanning active national weather alerts...</li>
+        </ul>
+      </div>
+    </section>
   </div>
 </main>
 
@@ -197,6 +230,6 @@
   </div>
 </div>
 
-<script src="app.js" defer></script>
+<script src="app.js?v=3.10" defer></script>
 </body>
 </html>
