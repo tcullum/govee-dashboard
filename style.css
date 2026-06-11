@@ -564,52 +564,55 @@ main{padding:0 22px 46px}
 .weather-stars span:nth-child(10){left:92%;top:31%;animation:starTwinkle 7.1s ease-in-out 1.5s infinite}
 .weather-stars span:nth-child(11){left:64%;top:58%;animation:starTwinkle 9.4s ease-in-out 4.4s infinite}
 .weather-stars span:nth-child(12){left:36%;top:72%;animation:starTwinkle 7.7s ease-in-out 2s infinite}
+.weather-card{
+  --cloud-hi:rgba(255,255,255,.96);
+  --cloud-mid:rgba(225,238,249,.82);
+  --cloud-shade:rgba(158,186,212,.55);
+}
+.weather-card.scene-night{
+  --cloud-hi:rgba(198,214,234,.52);
+  --cloud-mid:rgba(152,172,198,.4);
+  --cloud-shade:rgba(86,106,136,.34);
+}
+.weather-card.scene-rain{
+  --cloud-hi:rgba(208,218,232,.95);
+  --cloud-mid:rgba(160,174,194,.85);
+  --cloud-shade:rgba(108,122,144,.7);
+}
+.weather-card.scene-storm{
+  --cloud-hi:rgba(168,178,196,.95);
+  --cloud-mid:rgba(122,134,156,.88);
+  --cloud-shade:rgba(74,84,104,.78);
+}
+.weather-card.scene-rain.scene-night,
+.weather-card.scene-storm.scene-night{
+  --cloud-hi:rgba(120,132,154,.8);
+  --cloud-mid:rgba(88,100,122,.7);
+  --cloud-shade:rgba(52,62,80,.62);
+}
 .weather-clouds{
   position:absolute;
   inset:0;
   z-index:1;
   pointer-events:none;
   overflow:hidden;
-  opacity:.56;
-  mix-blend-mode:normal;
-  background:
-    linear-gradient(168deg,transparent 8%,rgba(255,255,255,.2) 10%,transparent 16%),
-    linear-gradient(176deg,transparent 19%,rgba(255,255,255,.18) 21%,transparent 26%),
-    linear-gradient(172deg,transparent 32%,rgba(179,212,243,.28) 34%,transparent 40%),
-    linear-gradient(180deg,transparent 62%,rgba(255,255,255,.08) 70%,transparent 80%);
+  opacity:.85;
 }
 .cloud-wisp{
   position:absolute;
   display:block;
   left:-18%;
-  height:18px;
+  height:30px;
   pointer-events:none;
   will-change:transform;
-  opacity:.64;
-  filter:
-    drop-shadow(0 2px 1px rgba(255,255,255,.2))
-    drop-shadow(0 6px 5px rgba(37,78,119,.24));
+  opacity:.55;
+  filter:url(#cloud-wispf);
   background:
-    radial-gradient(ellipse at 12% 78%,rgba(82,127,169,.18) 0 7%,transparent 8%),
-    radial-gradient(ellipse at 31% 82%,rgba(82,127,169,.22) 0 13%,transparent 14%),
-    radial-gradient(ellipse at 56% 80%,rgba(82,127,169,.18) 0 12%,transparent 13%),
-    radial-gradient(ellipse at 78% 77%,rgba(82,127,169,.14) 0 8%,transparent 9%),
-    radial-gradient(ellipse at 18% 66%,rgba(197,222,246,.38) 0 12%,transparent 13%),
-    radial-gradient(ellipse at 48% 70%,rgba(197,222,246,.32) 0 16%,transparent 17%),
-    radial-gradient(ellipse at 74% 67%,rgba(197,222,246,.26) 0 10%,transparent 11%),
-    radial-gradient(ellipse at 8% 54%,rgba(255,255,255,.8) 0 4%,transparent 4.6%),
-    radial-gradient(ellipse at 18% 43%,rgba(255,255,255,.9) 0 7%,transparent 7.8%),
-    radial-gradient(ellipse at 33% 37%,rgba(255,255,255,.94) 0 9%,transparent 9.9%),
-    radial-gradient(ellipse at 52% 35%,rgba(255,255,255,.92) 0 10%,transparent 10.9%),
-    radial-gradient(ellipse at 70% 45%,rgba(255,255,255,.84) 0 7%,transparent 7.8%),
-    radial-gradient(ellipse at 88% 58%,rgba(255,255,255,.7) 0 4%,transparent 4.6%),
-    linear-gradient(180deg,transparent 0 42%,rgba(255,255,255,.88) 43% 56%,rgba(206,228,248,.32) 57% 66%,transparent 67%);
-  -webkit-mask-image:
-    linear-gradient(90deg,transparent 0%,#000 8%,#000 88%,transparent 100%),
-    repeating-linear-gradient(176deg,#000 0 5px,transparent 6px 9px,#000 10px 18px);
-  mask-image:
-    linear-gradient(90deg,transparent 0%,#000 8%,#000 88%,transparent 100%),
-    repeating-linear-gradient(176deg,#000 0 5px,transparent 6px 9px,#000 10px 18px);
+    radial-gradient(30% 64% at 22% 50%,var(--cloud-mid) 0 54%,transparent 58%),
+    radial-gradient(26% 58% at 42% 42%,var(--cloud-hi) 0 52%,transparent 56%),
+    radial-gradient(28% 60% at 62% 50%,var(--cloud-mid) 0 51%,transparent 55%),
+    radial-gradient(22% 50% at 80% 56%,var(--cloud-mid) 0 48%,transparent 52%),
+    linear-gradient(90deg,transparent 2%,var(--cloud-mid) 20% 76%,transparent 98%);
 }
 .weather-clouds::before,
 .weather-clouds::after{
@@ -617,38 +620,22 @@ main{padding:0 22px 46px}
   position:absolute;
   left:-20%;
   width:145%;
-  height:54px;
-  border-radius:0;
-  filter:
-    drop-shadow(0 2px 1px rgba(255,255,255,.24))
-    drop-shadow(0 9px 7px rgba(37,78,119,.26));
+  height:78px;
   will-change:transform;
+  filter:url(#cloud-fluff);
   background:
-    radial-gradient(ellipse at 16% 83%,rgba(70,118,162,.18) 0 8%,transparent 9%),
-    radial-gradient(ellipse at 32% 86%,rgba(70,118,162,.24) 0 13%,transparent 14%),
-    radial-gradient(ellipse at 50% 83%,rgba(70,118,162,.22) 0 16%,transparent 17%),
-    radial-gradient(ellipse at 70% 84%,rgba(70,118,162,.18) 0 11%,transparent 12%),
-    radial-gradient(ellipse at 86% 80%,rgba(70,118,162,.12) 0 7%,transparent 8%),
-    radial-gradient(ellipse at 12% 71%,rgba(204,224,244,.46) 0 9%,transparent 10%),
-    radial-gradient(ellipse at 25% 76%,rgba(205,226,247,.54) 0 13%,transparent 14%),
-    radial-gradient(ellipse at 41% 72%,rgba(205,226,247,.46) 0 15%,transparent 16%),
-    radial-gradient(ellipse at 62% 74%,rgba(205,226,247,.4) 0 12%,transparent 13%),
-    radial-gradient(ellipse at 82% 72%,rgba(205,226,247,.32) 0 8%,transparent 9%),
-    radial-gradient(ellipse at 10% 50%,rgba(255,255,255,.9) 0 4%,transparent 4.6%),
-    radial-gradient(ellipse at 19% 42%,rgba(255,255,255,.98) 0 7%,transparent 7.8%),
-    radial-gradient(ellipse at 31% 35%,#fff 0 9%,transparent 9.9%),
-    radial-gradient(ellipse at 45% 30%,#fff 0 10%,transparent 10.8%),
-    radial-gradient(ellipse at 58% 39%,rgba(255,255,255,.98) 0 8%,transparent 8.8%),
-    radial-gradient(ellipse at 73% 47%,rgba(255,255,255,.92) 0 5%,transparent 5.8%),
-    radial-gradient(ellipse at 90% 54%,rgba(255,255,255,.76) 0 3%,transparent 3.8%),
-    linear-gradient(180deg,transparent 0 45%,rgba(255,255,255,.98) 46% 55%,rgba(219,235,249,.5) 56% 68%,transparent 69%),
-    linear-gradient(180deg,transparent 0 74%,rgba(255,255,255,.44) 75% 79%,transparent 80%);
-  -webkit-mask-image:
-    linear-gradient(90deg,transparent 0%,#000 7%,#000 86%,transparent 100%),
-    repeating-linear-gradient(178deg,#000 0 6px,transparent 7px 10px,#000 11px 22px);
-  mask-image:
-    linear-gradient(90deg,transparent 0%,#000 7%,#000 86%,transparent 100%),
-    repeating-linear-gradient(178deg,#000 0 6px,transparent 7px 10px,#000 11px 22px);
+    radial-gradient(40% 36% at 28% 84%,var(--cloud-shade) 0 56%,transparent 60%),
+    radial-gradient(36% 34% at 60% 86%,var(--cloud-shade) 0 54%,transparent 58%),
+    radial-gradient(18% 52% at 8% 66%,var(--cloud-mid) 0 54%,transparent 58%),
+    radial-gradient(22% 66% at 20% 56%,var(--cloud-hi) 0 55%,transparent 59%),
+    radial-gradient(26% 78% at 35% 48%,var(--cloud-hi) 0 56%,transparent 60%),
+    radial-gradient(24% 72% at 51% 52%,var(--cloud-hi) 0 55%,transparent 59%),
+    radial-gradient(20% 60% at 66% 58%,var(--cloud-hi) 0 54%,transparent 58%),
+    radial-gradient(16% 48% at 79% 66%,var(--cloud-mid) 0 52%,transparent 56%),
+    radial-gradient(13% 40% at 90% 72%,var(--cloud-mid) 0 48%,transparent 52%),
+    linear-gradient(180deg,transparent 0 48%,var(--cloud-mid) 62% 74%,transparent 88%);
+  -webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 10%,#000 88%,transparent 100%);
+  mask-image:linear-gradient(90deg,transparent 0%,#000 10%,#000 88%,transparent 100%);
 }
 .weather-clouds::before{
   top:10%;
@@ -659,6 +646,7 @@ main{padding:0 22px 46px}
   top:30%;
   opacity:.72;
   width:118%;
+  filter:url(#cloud-fluff-2);
   transform:scaleX(.72) scaleY(.78);
   animation:cloudDriftReverse var(--cloud-speed-slow,96s) linear infinite;
   animation-direction:var(--cloud-direction,normal);
@@ -672,19 +660,10 @@ main{padding:0 22px 46px}
 [data-theme=light] .weather-clouds{opacity:.58;mix-blend-mode:normal}
 [data-theme=light] .weather-card.scene-cloud .weather-clouds,
 [data-theme=light] .weather-card.scene-fog .weather-clouds{opacity:.72}
-.weather-card.scene-night .weather-clouds{
-  opacity:.56;
-  mix-blend-mode:normal;
-  background:
-    linear-gradient(180deg,rgba(255,255,255,.02) 0 1px,transparent 12%);
-}
+.weather-card.scene-night .weather-clouds{opacity:.62}
 .cloud-wisp-a{
   top:51%;
   width:132%;
-  filter:
-    blur(.4px)
-    drop-shadow(0 2px 1px rgba(255,255,255,.22))
-    drop-shadow(0 7px 7px rgba(37,78,119,.22));
   animation:moonWispSlow var(--cloud-speed-night-wisp,108s) linear infinite;
   animation-direction:var(--cloud-direction,normal);
 }
@@ -692,8 +671,8 @@ main{padding:0 22px 46px}
   top:65%;
   left:-12%;
   width:74%;
-  opacity:.42;
-  filter:blur(2.2px) drop-shadow(0 7px 8px rgba(37,78,119,.18));
+  opacity:.4;
+  filter:url(#cloud-wispf) blur(1.6px);
   transform:scaleY(.72);
   animation:moonWispMedium var(--cloud-speed,84s) linear infinite;
   animation-direction:var(--cloud-direction,normal);
@@ -702,76 +681,25 @@ main{padding:0 22px 46px}
   top:6%;
   left:46%;
   width:42%;
-  opacity:.72;
-  filter:
-    drop-shadow(0 2px 1px rgba(255,255,255,.2))
-    drop-shadow(0 5px 5px rgba(37,78,119,.2));
+  opacity:.66;
   transform:scaleY(.62);
   animation:moonWispFast var(--cloud-speed-fast,62s) linear infinite;
   animation-direction:var(--cloud-direction,normal);
 }
-.weather-card.scene-night .weather-clouds::before,
-.weather-card.scene-night .weather-clouds::after{
-  left:-20%;
-  width:145%;
-  height:46px;
-  border-radius:0;
-  filter:
-    drop-shadow(0 1px 1px rgba(255,255,255,.08))
-    drop-shadow(0 7px 7px rgba(0,0,0,.3));
-  -webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 12%,#000 88%,transparent 100%);
-  mask-image:linear-gradient(90deg,transparent 0%,#000 12%,#000 88%,transparent 100%);
-}
 .weather-card.scene-night .weather-clouds::before{
   top:13%;
-  opacity:.7;
-  background:
-    radial-gradient(ellipse at 17% 70%,rgba(139,174,210,.28) 0 10%,transparent 11%),
-    radial-gradient(ellipse at 42% 73%,rgba(139,174,210,.22) 0 14%,transparent 15%),
-    radial-gradient(ellipse at 71% 71%,rgba(139,174,210,.18) 0 10%,transparent 11%),
-    radial-gradient(ellipse at 16% 46%,rgba(240,248,255,.66) 0 5%,transparent 5.7%),
-    radial-gradient(ellipse at 31% 36%,rgba(246,250,255,.74) 0 8%,transparent 8.7%),
-    radial-gradient(ellipse at 49% 42%,rgba(235,245,255,.68) 0 7%,transparent 7.7%),
-    radial-gradient(ellipse at 74% 50%,rgba(230,242,255,.56) 0 5%,transparent 5.7%),
-    linear-gradient(180deg,transparent 0 48%,rgba(245,250,255,.68) 49% 58%,rgba(143,180,216,.2) 59% 70%,transparent 71%);
+  opacity:.78;
   animation:cloudDrift var(--cloud-speed-slow,104s) linear infinite;
   animation-direction:var(--cloud-direction,normal);
 }
 .weather-card.scene-night .weather-clouds::after{
   top:34%;
-  opacity:.58;
-  height:42px;
+  opacity:.55;
   width:112%;
-  background:
-    radial-gradient(ellipse at 18% 70%,rgba(139,174,210,.22) 0 10%,transparent 11%),
-    radial-gradient(ellipse at 54% 72%,rgba(139,174,210,.18) 0 15%,transparent 16%),
-    radial-gradient(ellipse at 12% 52%,rgba(240,248,255,.48) 0 4%,transparent 4.8%),
-    radial-gradient(ellipse at 28% 40%,rgba(246,250,255,.58) 0 7%,transparent 7.8%),
-    radial-gradient(ellipse at 53% 38%,rgba(235,245,255,.52) 0 8%,transparent 8.8%),
-    radial-gradient(ellipse at 78% 51%,rgba(230,242,255,.44) 0 5%,transparent 5.8%),
-    linear-gradient(180deg,transparent 0 51%,rgba(245,250,255,.5) 52% 58%,rgba(143,180,216,.14) 59% 68%,transparent 69%);
   animation:cloudDriftReverse var(--cloud-speed-night-drift,120s) linear infinite;
   animation-direction:var(--cloud-direction,normal);
 }
-.weather-card.scene-night .cloud-wisp{
-  left:-18%;
-  width:118%;
-  height:16px;
-  filter:
-    blur(.8px)
-    drop-shadow(0 1px 1px rgba(255,255,255,.08))
-    drop-shadow(0 6px 6px rgba(0,0,0,.26));
-  opacity:.62;
-  -webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 12%,#000 86%,transparent 100%);
-  mask-image:linear-gradient(90deg,transparent 0%,#000 12%,#000 86%,transparent 100%);
-  background:
-    radial-gradient(ellipse at 22% 72%,rgba(139,174,210,.18) 0 13%,transparent 14%),
-    radial-gradient(ellipse at 12% 51%,rgba(245,250,255,.56) 0 5%,transparent 5.7%),
-    radial-gradient(ellipse at 31% 38%,rgba(250,252,255,.68) 0 9%,transparent 9.8%),
-    radial-gradient(ellipse at 55% 46%,rgba(240,248,255,.58) 0 7%,transparent 7.8%),
-    radial-gradient(ellipse at 78% 53%,rgba(232,243,255,.46) 0 5%,transparent 5.8%),
-    linear-gradient(180deg,transparent 0 46%,rgba(245,250,255,.62) 47% 57%,rgba(143,180,216,.16) 58% 68%,transparent 69%);
-}
+.weather-card.scene-night .cloud-wisp{opacity:.45}
 .weather-card.scene-night .cloud-wisp-a{
   top:24%;
   animation:moonWispSlow var(--cloud-speed-night-wisp,108s) linear infinite;
@@ -781,10 +709,7 @@ main{padding:0 22px 46px}
   top:47%;
   left:-18%;
   width:78%;
-  opacity:.36;
-  filter:
-    blur(1.4px)
-    drop-shadow(0 5px 6px rgba(0,0,0,.2));
+  opacity:.32;
   transform:scaleY(.72);
   animation:moonWispMedium var(--cloud-speed,84s) linear infinite;
   animation-direction:var(--cloud-direction,normal);
@@ -793,8 +718,7 @@ main{padding:0 22px 46px}
   top:7%;
   left:42%;
   width:48%;
-  opacity:.34;
-  filter:drop-shadow(0 4px 5px rgba(0,0,0,.2));
+  opacity:.3;
   transform:scaleY(.56);
   animation:moonWispFast var(--cloud-speed-fast,62s) linear infinite;
   animation-direction:var(--cloud-direction,normal);

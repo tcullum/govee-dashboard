@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
-  <link rel="stylesheet" href="style.css?v=4.1">
+  <link rel="stylesheet" href="style.css?v=4.2">
 </head>
 
 <body>
@@ -246,6 +246,26 @@
     <div class="location-options" id="locationOptions"></div>
   </div>
 </div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <filter id="cloud-fluff" x="-20%" y="-60%" width="140%" height="220%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.011 0.028" numOctaves="3" seed="8" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="34" xChannelSelector="R" yChannelSelector="G"/>
+      <feGaussianBlur stdDeviation="0.8"/>
+    </filter>
+    <filter id="cloud-fluff-2" x="-20%" y="-60%" width="140%" height="220%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.014 0.022" numOctaves="3" seed="23" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="42" xChannelSelector="R" yChannelSelector="G"/>
+      <feGaussianBlur stdDeviation="0.8"/>
+    </filter>
+    <filter id="cloud-wispf" x="-20%" y="-90%" width="140%" height="280%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.008 0.045" numOctaves="2" seed="4" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="26" xChannelSelector="R" yChannelSelector="G"/>
+      <feGaussianBlur stdDeviation="1.1"/>
+    </filter>
+  </defs>
+</svg>
 
 <script src="app.js?v=4.1" defer></script>
 </body>

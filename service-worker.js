@@ -2,7 +2,7 @@
 // Network-first for everything so updates always land; cache is only an
 // offline fallback for the static shell.
 
-const CACHE_NAME = "house-weather-v4.1";
+const CACHE_NAME = "house-weather-v4.2";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
