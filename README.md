@@ -87,9 +87,10 @@ source venv/bin/activate
 | Variable | Required | Description |
 | --- | --- | --- |
 | `GOVEE_API_KEY` | Yes | Govee Developer API key used to read sensor data. |
-| `PORT` | No | Flask server port. Defaults to `8000`. |
+| `PORT` | No | Server port. Defaults to `8000`. |
 | `ANTHROPIC_API_KEY` | No | Enables AI insights when set. |
 | `ANTHROPIC_MODEL` | No | Anthropic model used for AI insights. |
+| `LOG_RETENTION_DAYS` | No | Days of sensor history kept in `govee_readings.csv`. Defaults to `30`. |
 | `NOAA_TOKEN` | No | Reserved for future/legacy NOAA use. Current weather alerts use public NWS endpoints. |
 
 ## Getting A Govee API Key
@@ -134,11 +135,11 @@ Force a live readings refresh:
 
 The app writes a few local runtime files:
 
-- `govee_readings.csv` for sensor history
+- `govee_readings.csv` for sensor history (automatically trimmed to the last `LOG_RETENTION_DAYS` days, 30 by default)
 - `almanac_cache.json` for historical weather cache
 - `insights_cache.json` for AI insight cache
 
-These are ignored by Git so each user keeps their own local data.
+These are ignored by Git so each user keeps their own local data. Sensor history is served from an in-memory cache, so the CSV is only read once at startup. Use the export button in the dashboard header (or `/api/export`) to download the full CSV.
 
 ## Customizing The Dashboard
 
@@ -158,10 +159,11 @@ The local weather panel asks the browser for geolocation when available. If geol
 | --- | --- |
 | `/api/readings` | Current Govee readings, cached briefly for fast UI refresh. |
 | `/api/readings?refresh=1` | Force a fresh Govee API poll. |
-| `/api/history` | Sensor history read from `govee_readings.csv`. |
+| `/api/history` | 24 hours of per-device history, downsampled, served from memory. |
+| `/api/export` | Download the full readings CSV. |
 | `/api/almanac` | Historical weather averages from Open-Meteo Archive. |
 | `/api/almanac/insights` | Optional AI insights. Requires `ANTHROPIC_API_KEY`. |
-| `/api/status` | Cache, refresh, and AI status. |
+| `/api/status` | Cache, refresh, history retention, and AI status. |
 
 ## Troubleshooting
 
@@ -186,6 +188,7 @@ If weather warnings look wrong:
 ## Security Notes
 
 - Keep `.env` private.
+- The server only serves an explicit allowlist of static files; `.env`, the readings CSV, caches, and server source are never reachable over HTTP.
 - Do not expose the dashboard publicly unless you understand the risks.
 - If you publish it through a tunnel or reverse proxy, consider adding authentication at the proxy layer.
 

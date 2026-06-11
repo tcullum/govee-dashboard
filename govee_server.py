@@ -9,9 +9,16 @@ from typing import List, Dict, Any
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from flask import Flask, jsonify, send_from_directory, Response, request
+from flask import Flask, jsonify, send_from_directory, send_file, Response, request, abort
 import requests
 import anthropic
+
+try:
+    from dotenv import load_dotenv
+    # utf-8-sig tolerates the BOM that Windows editors often prepend
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"), encoding="utf-8-sig")
+except ImportError:
+    pass
 
 # ---------------------------------------------------------------------
 # CONFIG
@@ -25,25 +32,52 @@ INSIGHTS_CACHE_HOURS = 24  # Cache for 24 hours so insights refresh daily
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 READINGS_REFRESH_SECONDS = 45
 READINGS_STALE_SECONDS = 300
+LOG_RETENTION_DAYS = int(os.environ.get("LOG_RETENTION_DAYS", "30"))
+LOG_TRIM_INTERVAL_SECONDS = 24 * 3600
+# 24h of history at one row per refresh interval, with headroom
+HISTORY_POINTS_PER_DEVICE = max(2400, int(86400 / READINGS_REFRESH_SECONDS) + 200)
+HISTORY_MAX_PAYLOAD_POINTS = 240
 _readings_cache = None
 _readings_cache_time = 0.0
 _readings_last_success_time = 0.0
 _readings_last_error = None
 _readings_refreshing = False
 _readings_lock = threading.Lock()
+_log_lock = threading.Lock()
+_history_lock = threading.Lock()
+_history_cache: Dict[str, deque] = {}
+_last_trim_time = 0.0
 
 # ---------------------------------------------------------------------
 # FLASK APP
 # ---------------------------------------------------------------------
-app = Flask(__name__, static_folder='.', static_url_path='')
+app = Flask(__name__, static_folder=None)
+
+# Only these files are served from the project root. The previous catch-all
+# route exposed .env, the readings CSV, and server source to anyone on the
+# network.
+STATIC_FILES = {
+    "index.html", "app.js", "style.css", "service-worker.js", "manifest.json",
+    "favicon.ico", "favicon-16x16.png", "favicon-32x32.png",
+}
+STATIC_FAVICON_EXTS = (".png", ".ico", ".webmanifest")
 
 @app.route("/")
 def serve_index() -> Response:
-    return send_from_directory(".", "index.html")
+    return send_from_directory(HERE, "index.html")
 
 @app.route("/<path:filename>")
 def serve_static(filename):
-    return send_from_directory(".", filename)
+    safe = filename.replace("\\", "/")
+    in_root = safe in STATIC_FILES
+    in_favicons = (
+        safe.startswith("favicon/")
+        and safe.count("/") == 1
+        and safe.endswith(STATIC_FAVICON_EXTS)
+    )
+    if not (in_root or in_favicons):
+        abort(404)
+    return send_from_directory(HERE, safe)
 
 # ---------------------------------------------------------------------
 # LOGGING HELPER
@@ -151,45 +185,121 @@ def _collect_sensor_devices(devices):
             })
     return sensors
 
+_latest_by_device: Dict[str, Dict[str, Any]] = {}
+
+def _history_append(device, ts, temp_c, humidity, name=None):
+    with _history_lock:
+        series = _history_cache.get(device)
+        if series is None:
+            series = deque(maxlen=HISTORY_POINTS_PER_DEVICE)
+            _history_cache[device] = series
+        series.append({"timestamp": ts, "temp_c": temp_c, "humidity": humidity})
+        _latest_by_device[device] = {
+            "name": name or _latest_by_device.get(device, {}).get("name") or "Unknown",
+            "device": device,
+            "temp_c": temp_c,
+            "humidity": humidity,
+            "timestamp": ts,
+        }
+
 def _append_log_row(ts, name, device, temp_c, humidity):
-    header_needed = not os.path.exists(LOG_PATH) or os.path.getsize(LOG_PATH) == 0
     try:
-        with open(LOG_PATH, "a", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            if header_needed:
-                w.writerow(["timestamp","name","device","temp_c","humidity"])
-            w.writerow([ts, name, device, temp_c if temp_c is not None else "", humidity if humidity is not None else ""])
+        with _log_lock:
+            header_needed = not os.path.exists(LOG_PATH) or os.path.getsize(LOG_PATH) == 0
+            with open(LOG_PATH, "a", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                if header_needed:
+                    w.writerow(["timestamp","name","device","temp_c","humidity"])
+                w.writerow([ts, name, device, temp_c if temp_c is not None else "", humidity if humidity is not None else ""])
+        _history_append(device, ts, temp_c, humidity, name)
     except Exception as e:
         log(f"Error writing log: {e}")
 
-def _read_history(limit_per_device: int = 100):
-    if not os.path.exists(LOG_PATH):
-        return {}
-    out = {}
+def _parse_row_floats(row):
     try:
-        with open(LOG_PATH, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            recent_rows = deque(reader, maxlen=4000) 
+        t = float(row["temp_c"]) if row.get("temp_c") else None
+    except (TypeError, ValueError):
+        t = None
+    try:
+        h = float(row["humidity"]) if row.get("humidity") else None
+    except (TypeError, ValueError):
+        h = None
+    return t, h
 
-        for row in recent_rows:
+def _seed_history_cache():
+    """Read the CSV once at startup so /api/history never re-parses the file."""
+    if not os.path.exists(LOG_PATH):
+        return
+    try:
+        with _log_lock:
+            with open(LOG_PATH, "r", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+        count = 0
+        for row in rows:
             dev = row.get("device")
-            if not dev: continue
-            try:
-                t = float(row["temp_c"]) if row["temp_c"] else None
-                h = float(row["humidity"]) if row["humidity"] else None
-            except:
-                t = None; h = None
-
-            out.setdefault(dev, []).append({
-                "timestamp": row["timestamp"],
-                "temp_c": t,
-                "humidity": h
-            })
-        for k in out:
-            out[k] = out[k][-limit_per_device:]
+            if not dev:
+                continue
+            t, h = _parse_row_floats(row)
+            _history_append(dev, row.get("timestamp"), t, h, row.get("name"))
+            count += 1
+        log(f"Seeded history cache with {count} rows across {len(_history_cache)} devices")
     except Exception as e:
-        log(f"History read error: {e}")
-        return {}
+        log(f"History seed error: {e}")
+
+def _trim_log():
+    """Rewrite the CSV keeping only rows newer than the retention window."""
+    global _last_trim_time
+    _last_trim_time = time.time()
+    if not os.path.exists(LOG_PATH):
+        return
+    cutoff = datetime.now(timezone.utc) - timedelta(days=LOG_RETENTION_DAYS)
+    tmp_path = LOG_PATH + ".tmp"
+    kept = 0
+    dropped = 0
+    try:
+        with _log_lock:
+            with open(LOG_PATH, "r", encoding="utf-8") as src:
+                reader = csv.DictReader(src)
+                fieldnames = reader.fieldnames or ["timestamp", "name", "device", "temp_c", "humidity"]
+                with open(tmp_path, "w", newline="", encoding="utf-8") as dst:
+                    writer = csv.DictWriter(dst, fieldnames=fieldnames, extrasaction="ignore")
+                    writer.writeheader()
+                    for row in reader:
+                        try:
+                            ts = datetime.fromisoformat(row["timestamp"])
+                            if ts.tzinfo is None:
+                                ts = ts.replace(tzinfo=timezone.utc)
+                        except (KeyError, TypeError, ValueError):
+                            dropped += 1
+                            continue
+                        if ts >= cutoff:
+                            writer.writerow(row)
+                            kept += 1
+                        else:
+                            dropped += 1
+            os.replace(tmp_path, LOG_PATH)
+        log(f"Trimmed readings log to {LOG_RETENTION_DAYS} days: kept {kept}, dropped {dropped}")
+    except Exception as e:
+        log(f"Log trim error: {e}")
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+
+def _downsample(points, max_points=HISTORY_MAX_PAYLOAD_POINTS):
+    if len(points) <= max_points:
+        return points
+    stride = len(points) / max_points
+    sampled = [points[int(i * stride)] for i in range(max_points)]
+    sampled[-1] = points[-1]
+    return sampled
+
+def _read_history(limit_per_device: int = HISTORY_MAX_PAYLOAD_POINTS):
+    out = {}
+    with _history_lock:
+        for dev, series in _history_cache.items():
+            out[dev] = _downsample(list(series), limit_per_device)
     return out
 
 def _iso_from_timestamp(ts):
@@ -198,42 +308,16 @@ def _iso_from_timestamp(ts):
     return datetime.fromtimestamp(ts, timezone.utc).astimezone().isoformat(timespec="seconds")
 
 def _latest_readings_from_log():
-    if not os.path.exists(LOG_PATH):
-        return None
-
-    latest = {}
-    try:
-        with open(LOG_PATH, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                dev = row.get("device")
-                if not dev:
-                    continue
-                try:
-                    temp_c = float(row["temp_c"]) if row.get("temp_c") else None
-                    humidity = float(row["humidity"]) if row.get("humidity") else None
-                except Exception:
-                    temp_c = None
-                    humidity = None
-
-                latest[dev] = {
-                    "name": row.get("name") or "Unknown",
-                    "sku": None,
-                    "device": dev,
-                    "temp_c": temp_c,
-                    "temp_f": c_to_f(temp_c),
-                    "humidity": humidity,
-                    "battery": None,
-                    "timestamp": row.get("timestamp")
-                }
-    except Exception as e:
-        log(f"Latest readings cache read error: {e}")
-        return None
-
+    with _history_lock:
+        latest = [dict(entry) for entry in _latest_by_device.values()]
     if not latest:
         return None
+    for item in latest:
+        item["sku"] = None
+        item["battery"] = None
+        item["temp_f"] = c_to_f(item.get("temp_c"))
     return {
-        "items": list(latest.values()),
+        "items": latest,
         "note": "Showing last logged readings while refreshing",
         "source": "log"
     }
@@ -379,9 +463,13 @@ def _cached_readings_payload():
     return None, None
 
 def _background_readings_loop():
+    _seed_history_cache()
+    _trim_log()
     time.sleep(2)
     while True:
         _start_readings_refresh()
+        if time.time() - _last_trim_time > LOG_TRIM_INTERVAL_SECONDS:
+            _trim_log()
         time.sleep(READINGS_REFRESH_SECONDS)
 
 @app.get("/api/readings")
@@ -437,6 +525,11 @@ def api_status():
             "last_error": last_error,
             "refresh_interval_seconds": READINGS_REFRESH_SECONDS
         },
+        "history": {
+            "devices": len(_history_cache),
+            "retention_days": LOG_RETENTION_DAYS,
+            "last_trim_at": _iso_from_timestamp(_last_trim_time)
+        },
         "ai": {
             "anthropic_model": ANTHROPIC_MODEL,
             "insights_cached": insights_cached,
@@ -446,7 +539,19 @@ def api_status():
 
 @app.get("/api/history")
 def api_history():
-    return jsonify({"series": _read_history(limit_per_device=200)})
+    return jsonify({"series": _read_history()})
+
+@app.get("/api/export")
+def api_export():
+    if not os.path.exists(LOG_PATH):
+        abort(404)
+    stamp = datetime.now().strftime("%Y-%m-%d")
+    return send_file(
+        LOG_PATH,
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name=f"govee_readings_{stamp}.csv",
+    )
 
 @app.get("/api/almanac")
 def api_almanac():
@@ -707,6 +812,14 @@ Return ONLY a JSON array of strings, like:
         insights = ["Unable to generate insights at this time."]
     except Exception as e:
         log(f"Claude API error: {e}")
+        # Fall back to the last cached insights rather than showing nothing
+        if cache.get("insights"):
+            return jsonify({
+                "insights": cache["insights"],
+                "cached": True,
+                "stale": True,
+                "timestamp": cache.get("timestamp")
+            })
         return jsonify({"error": f"AI generation failed: {str(e)}"}), 500
 
     # 6. Cache the results
@@ -733,4 +846,10 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8000"))
     log(f"Starting server on port {port}...")
     threading.Thread(target=_background_readings_loop, daemon=True).start()
-    app.run(host="0.0.0.0", port=port, debug=False)
+    try:
+        from waitress import serve
+        log("Serving with waitress")
+        serve(app, host="0.0.0.0", port=port, threads=8)
+    except ImportError:
+        log("waitress not installed; falling back to Flask dev server")
+        app.run(host="0.0.0.0", port=port, debug=False)
