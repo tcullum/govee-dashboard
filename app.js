@@ -221,9 +221,15 @@ function updateSkyMotion(card, current = {}, sunrise, sunset, isDay) {
   }
 }
 
+// Dev/demo override: ?scene=rain|snow|storm|fog|cloud|clear and ?time=day|night
+const FORCED_SCENE_CODES = { clear: 0, cloud: 3, fog: 45, rain: 63, snow: 73, storm: 95 };
+
 function applyWeatherScene(code, daily, current) {
   const card = elements.weather.card;
   if (!card) return;
+  const params = new URLSearchParams(location.search);
+  const forcedScene = params.get('scene');
+  if (forcedScene && FORCED_SCENE_CODES[forcedScene] != null) code = FORCED_SCENE_CODES[forcedScene];
 
   const sceneClasses = [
     'scene-clear', 'scene-cloud', 'scene-rain', 'scene-snow', 'scene-storm', 'scene-fog',
@@ -237,7 +243,10 @@ function applyWeatherScene(code, daily, current) {
   const now = new Date();
   const sunrise = daily?.sunrise?.[0] ? new Date(daily.sunrise[0]) : null;
   const sunset = daily?.sunset?.[0] ? new Date(daily.sunset[0]) : null;
-  const isDay = sunrise && sunset ? now >= sunrise && now <= sunset : true;
+  const forcedTime = params.get('time');
+  const isDay = forcedTime
+    ? forcedTime === 'day'
+    : (sunrise && sunset ? now >= sunrise && now <= sunset : true);
   card.classList.add(isDay ? 'scene-day' : 'scene-night');
   updateSkyMotion(card, current, sunrise, sunset, isDay);
 

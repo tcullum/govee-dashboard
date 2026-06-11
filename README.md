@@ -153,6 +153,8 @@ Common places to customize:
 
 The local weather panel asks the browser for geolocation when available. If geolocation is blocked or unavailable, it falls back to Las Vegas.
 
+To preview the animated weather scenes without waiting for real weather, force them with URL parameters: `/?scene=rain|snow|storm|fog|cloud|clear` and `&time=day|night`.
+
 ## API Endpoints
 
 | Endpoint | Purpose |
