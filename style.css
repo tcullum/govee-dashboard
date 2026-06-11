@@ -2102,32 +2102,89 @@ body.compact .spark{height:34px}
     radial-gradient(72% 160% at 34% 100%,var(--hz-near) 49.5%,transparent 50.5%),
     radial-gradient(84% 180% at 90% 100%,var(--hz-near) 49.5%,transparent 50.5%);
 }
+/* Ghibli-inspired cottage: cream plaster, terracotta roof, green door,
+   lit windows, chimney smoke, and a fluffy tree */
+.weather-card{
+  --hw-wall:#f1e2c0;
+  --hw-wall-shade:#e2cda1;
+  --hw-roof:#a8553f;
+  --hw-chimney:#b06a50;
+  --hw-door:#4e6b4f;
+  --hw-window:#ffe08a;
+  --hw-pane:#8a5a3c;
+  --hw-leaf:#5e9e5a;
+  --hw-leaf2:#4c8a4e;
+  --hw-trunk:#6b4a36;
+  --hw-grass:#5e9e5a;
+  --hw-smoke:rgba(255,255,255,.75);
+}
+.weather-card.scene-night{
+  --hw-wall:#3d4360;
+  --hw-wall-shade:#343a56;
+  --hw-roof:#252c46;
+  --hw-chimney:#2d3452;
+  --hw-door:#27314a;
+  --hw-window:#ffd97a;
+  --hw-pane:#6e5526;
+  --hw-leaf:#26483d;
+  --hw-leaf2:#1f3d34;
+  --hw-trunk:#2c2838;
+  --hw-grass:#26483d;
+  --hw-smoke:rgba(206,219,238,.5);
+}
 .horizon-house{
   position:absolute;
-  right:13%;
-  bottom:30px;
-  width:38px;
-  height:28px;
+  right:10%;
+  bottom:18px;
+  width:92px;
+  height:69px;
   z-index:1;
-  background:#0a1626;
-  clip-path:polygon(0 40%,50% 0,100% 40%,100% 100%,0 100%);
-  filter:drop-shadow(0 2px 4px rgba(0,0,0,.4));
+  overflow:visible;
+  filter:drop-shadow(0 3px 5px rgba(0,0,0,.38));
 }
-.weather-card.scene-night .horizon-house{background:#040a12}
-.horizon-house::before{
-  content:"";
-  position:absolute;
-  left:15px;
-  top:14px;
-  width:9px;
-  height:10px;
-  border-radius:2px;
-  background:#ffd97a;
-  box-shadow:0 0 12px 2px rgba(255,209,102,.95);
+.hw-shadow{fill:rgba(4,10,18,.28)}
+.hw-wall{fill:var(--hw-wall)}
+.hw-gable{fill:var(--hw-wall-shade)}
+.hw-roof{
+  fill:none;
+  stroke:var(--hw-roof);
+  stroke-width:7;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+.hw-chimney{fill:var(--hw-chimney)}
+.hw-cap{fill:var(--hw-roof)}
+.hw-door{fill:var(--hw-door)}
+.hw-knob{fill:#e8c97a}
+.hw-window{fill:var(--hw-window)}
+.hw-pane{stroke:var(--hw-pane);stroke-width:1.1;fill:none}
+.hw-leaf{fill:var(--hw-leaf)}
+.hw-leaf2{fill:var(--hw-leaf2)}
+.hw-trunk{fill:var(--hw-trunk)}
+.hw-grass{stroke:var(--hw-grass);stroke-width:1.6;stroke-linecap:round;fill:none}
+.weather-card.scene-night .hw-window{
+  filter:drop-shadow(0 0 5px rgba(255,209,102,.95));
   animation:windowGlow 6s ease-in-out infinite;
 }
-.weather-card.scene-day .horizon-house{background:#142c47}
-.weather-card.scene-day .horizon-house::before{opacity:.55;box-shadow:none;animation:none}
+.weather-card.scene-snow .hw-roof,
+.weather-card.scene-snow .hw-cap{stroke:#e8f1f8;fill:#e8f1f8}
+.weather-card.scene-snow .hw-roof{stroke:#e8f1f8}
+.weather-card.scene-snow .hw-leaf,
+.weather-card.scene-snow .hw-leaf2{fill:#9fb8c4}
+.hw-smoke circle{
+  fill:var(--hw-smoke);
+  opacity:0;
+  transform-box:fill-box;
+  transform-origin:center;
+  animation:smokePuff 5.5s ease-out infinite;
+}
+.hw-smoke circle:nth-child(2){animation-delay:1.8s}
+.hw-smoke circle:nth-child(3){animation-delay:3.6s}
+@keyframes smokePuff{
+  0%{opacity:0;transform:translate(0,5px) scale(.55)}
+  22%{opacity:.7}
+  100%{opacity:0;transform:translate(5px,-15px) scale(1.6)}
+}
 @keyframes windowGlow{0%,100%{opacity:1}50%{opacity:.7}}
 
 /* --- sun: slowly rotating ray cones and a gentle breathe --- */

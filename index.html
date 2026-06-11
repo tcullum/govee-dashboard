@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
-  <link rel="stylesheet" href="style.css?v=4.2">
+  <link rel="stylesheet" href="style.css?v=4.3">
 </head>
 
 <body>
@@ -90,7 +90,32 @@
           <span></span>
         </div>
         <div class="weather-horizon" aria-hidden="true">
-          <span class="horizon-house"></span>
+          <svg class="horizon-house" viewBox="0 0 96 72">
+            <ellipse class="hw-shadow" cx="48" cy="65.5" rx="31" ry="4"/>
+            <rect class="hw-trunk" x="13" y="48" width="4" height="17" rx="1.5"/>
+            <circle class="hw-leaf" cx="15" cy="40" r="10"/>
+            <circle class="hw-leaf2" cx="22" cy="46" r="7"/>
+            <g class="hw-smoke">
+              <circle cx="63" cy="13" r="3"/>
+              <circle cx="63" cy="13" r="3.6"/>
+              <circle cx="63" cy="13" r="4.2"/>
+            </g>
+            <rect class="hw-chimney" x="59" y="15" width="8" height="16" rx="1"/>
+            <rect class="hw-cap" x="57.5" y="12.5" width="11" height="4" rx="1.5"/>
+            <path class="hw-gable" d="M28 40 48 19 68 40Z"/>
+            <rect class="hw-wall" x="28" y="39" width="40" height="26" rx="1.5"/>
+            <path class="hw-roof" d="M24.5 41 48 16.5 71.5 41"/>
+            <circle class="hw-window hw-window-attic" cx="48" cy="31.5" r="3.4"/>
+            <path class="hw-door" d="M43.5 65v-12.2a4.8 4.8 0 0 1 9.6 0V65Z"/>
+            <circle class="hw-knob" cx="50.9" cy="58" r=".9"/>
+            <rect class="hw-window" x="32.5" y="45" width="9" height="10" rx="1.5"/>
+            <path class="hw-pane" d="M37 45v10M32.5 50h9"/>
+            <rect class="hw-window" x="54.5" y="45" width="9" height="10" rx="1.5"/>
+            <path class="hw-pane" d="M59 45v10M54.5 50h9"/>
+            <circle class="hw-leaf2" cx="79" cy="61" r="6"/>
+            <circle class="hw-leaf" cx="85" cy="63" r="4.5"/>
+            <path class="hw-grass" d="M25 65c1-3 2-3 3 0M71 65c1-3 2-3 3 0M36 66c1-2.6 2-2.6 3 0M58 66c1-2.6 2-2.6 3 0"/>
+          </svg>
         </div>
         <div class="weather-precip" aria-hidden="true"></div>
         <div class="weather-lightning" aria-hidden="true"></div>
