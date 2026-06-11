@@ -295,6 +295,98 @@ const cToF = c => (c * 9 / 5) + 32;
 const fToC = f => (f - 32) * 5 / 9;
 const fmt = (n, dp = 1) => (n != null && isFinite(n)) ? Number(n).toFixed(dp) : '—';
 const isValid = n => typeof n === 'number' && isFinite(n);
+const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const isLightTheme = () => document.documentElement.getAttribute('data-theme') === 'light';
+
+// Tween a numeric text value so readings glide instead of jumping.
+function animateNumber(el, value, decimals = 1) {
+  if (!el) return;
+  if (!isValid(value)) {
+    el.textContent = '—';
+    delete el.dataset.val;
+    return;
+  }
+  const from = parseFloat(el.dataset.val);
+  el.dataset.val = value;
+  if (!isFinite(from) || from === value || prefersReducedMotion()) {
+    el.textContent = value.toFixed(decimals);
+    return;
+  }
+  const start = performance.now();
+  const duration = 650;
+  const step = now => {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = (from + (value - from) * eased).toFixed(decimals);
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// Compare the latest reading against ~1 hour ago to label the short-term trend.
+function computeTrend(points) {
+  if (!Array.isArray(points) || points.length < 4) return null;
+  const latest = points[points.length - 1];
+  const latestTime = latest.ts ? new Date(latest.ts).getTime() : null;
+  if (!latestTime) return null;
+  const target = latestTime - 60 * 60 * 1000;
+  let reference = points[0];
+  for (const point of points) {
+    const time = point.ts ? new Date(point.ts).getTime() : null;
+    if (time && time <= target) reference = point;
+    else break;
+  }
+  if (!isValid(reference.val) || !isValid(latest.val)) return null;
+  const delta = latest.val - reference.val;
+  const threshold = unit === 'F' ? 0.8 : 0.45;
+  if (delta > threshold) return { dir: 'rising', delta };
+  if (delta < -threshold) return { dir: 'falling', delta };
+  return { dir: 'steady', delta };
+}
+
+const TREND_ARROWS = {
+  rising: 'M7 17 17 7M17 7h-7M17 7v7',
+  falling: 'M7 7l10 10M17 17h-7M17 17v-7',
+  steady: 'M5 12h14M15 8l4 4-4 4'
+};
+
+function renderTrend(el, trend) {
+  if (!el) return;
+  if (!trend) {
+    el.innerHTML = '';
+    el.className = 'trend';
+    el.title = '';
+    return;
+  }
+  el.className = `trend trend-${trend.dir}`;
+  const signed = `${trend.delta > 0 ? '+' : ''}${trend.delta.toFixed(1)}°`;
+  el.title = trend.dir === 'steady' ? 'Steady over the last hour' : `${signed} over the last hour`;
+  el.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${TREND_ARROWS[trend.dir]}" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+const HUM_RING_CIRCUMFERENCE = 2 * Math.PI * 16;
+
+function renderHumidityRing(el, humidity) {
+  if (!el) return;
+  const valid = isValid(humidity);
+  if (!el.querySelector('svg')) {
+    el.innerHTML = `
+      <svg viewBox="0 0 40 40" aria-hidden="true">
+        <circle class="hum-track" cx="20" cy="20" r="16"></circle>
+        <circle class="hum-fill" cx="20" cy="20" r="16"
+          stroke-dasharray="${HUM_RING_CIRCUMFERENCE.toFixed(1)}"
+          stroke-dashoffset="${HUM_RING_CIRCUMFERENCE.toFixed(1)}"></circle>
+      </svg>
+      <span class="hum-val"></span>`;
+  }
+  const bad = valid && (humidity < 30 || humidity > 60);
+  el.className = `humidity-badge ${valid ? (bad ? 'humidity-bad' : 'humidity-ok') : 'humidity-na'}`;
+  el.title = 'Relative humidity';
+  const pct = valid ? clamp(humidity, 0, 100) : 0;
+  el.querySelector('.hum-fill').style.strokeDashoffset =
+    (HUM_RING_CIRCUMFERENCE * (1 - pct / 100)).toFixed(1);
+  el.querySelector('.hum-val').textContent = valid ? `${Math.round(humidity)}%` : '--';
+}
 
 function classifyF(f) {
   if (!isFinite(f)) return 'comfy';
@@ -457,6 +549,11 @@ function formatAge(seconds) {
   return `${hours}h ago`;
 }
 
+function setFreshnessChip(text, stateClass = '') {
+  elements.freshness.className = `chip freshness-chip${stateClass ? ' ' + stateClass : ''}`;
+  elements.freshness.innerHTML = `<span class="live-dot" aria-hidden="true"></span>${escapeHtml(text)}`;
+}
+
 function updateFreshness(readings) {
   if (!elements.freshness) return;
   elements.freshness.title = 'Govee refreshes automatically in the background';
@@ -466,23 +563,18 @@ function updateFreshness(readings) {
   const isLog = readings.source === 'log';
   const isRefreshing = readings.refreshing;
 
-  elements.freshness.className = 'chip freshness-chip';
-
   if (isLog) {
-    elements.freshness.textContent = isRefreshing ? 'Last logged · refreshing' : 'Last logged';
-    elements.freshness.classList.add('stale');
+    setFreshnessChip(isRefreshing ? 'Last logged · refreshing' : 'Last logged', 'stale');
     return;
   }
 
   if (isValid(liveAge)) {
-    elements.freshness.textContent = `${isRefreshing ? 'Refreshing · ' : 'Live '}${formatAge(liveAge)}`;
-    if (liveAge > 180) elements.freshness.classList.add('stale');
-    else if (isRefreshing || cacheAge > 45) elements.freshness.classList.add('refreshing');
+    const stateClass = liveAge > 180 ? 'stale' : ((isRefreshing || cacheAge > 45) ? 'refreshing' : '');
+    setFreshnessChip(`${isRefreshing ? 'Refreshing · ' : 'Live '}${formatAge(liveAge)}`, stateClass);
     return;
   }
 
-  elements.freshness.textContent = isRefreshing ? 'Refreshing' : 'Waiting';
-  elements.freshness.classList.add('refreshing');
+  setFreshnessChip(isRefreshing ? 'Refreshing' : 'Waiting', 'refreshing');
 }
 
 function escapeHtml(value) {
@@ -1133,6 +1225,10 @@ async function loadPollen(lat, lon) {
 /* === THEME & SETTINGS === */
 function applyTheme(mode, persist = true) {
   document.documentElement.setAttribute('data-theme', mode);
+  // Charts bake theme colors into the canvas, so repaint them
+  document.querySelectorAll('canvas.spark').forEach(c => {
+    try { drawSpark(c, JSON.parse(c.dataset.series)); } catch {}
+  });
   elements.buttons.themeDark.classList.toggle('active', mode === 'dark');
   elements.buttons.themeLight.classList.toggle('active', mode === 'light');
   elements.buttons.themeDark.hidden = mode === 'dark';
@@ -1157,6 +1253,7 @@ function setUnit(nextUnit) {
   applyUnitButtons();
   loadData();
   renderLocationStrip();
+  renderWeather();
 }
 
 function applyFontSize(size) {
@@ -1267,13 +1364,15 @@ function drawSpark(canvas, data) {
     y: pad + (1 - (values[i] - min) / range) * (H - pad * 2)
   });
 
+  const light = isLightTheme();
+
   function render(highlightIndex = -1) {
     ctx.clearRect(0, 0, W, H);
 
     const grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, '#ef4444');
+    grad.addColorStop(0, '#f87171');
     grad.addColorStop(0.5, '#fbbf24');
-    grad.addColorStop(1, '#3b82f6');
+    grad.addColorStop(1, '#38bdf8');
 
     const sourcePoints = values.map((_, i) => getPt(i));
     const points = [];
@@ -1308,7 +1407,10 @@ function drawSpark(canvas, data) {
 
     ctx.lineTo(getPt(values.length-1).x, H);
     ctx.lineTo(getPt(0).x, H);
-    ctx.fillStyle = "rgba(96, 165, 250, 0.05)";
+    const fillGrad = ctx.createLinearGradient(0, 0, 0, H);
+    fillGrad.addColorStop(0, light ? 'rgba(56,132,222,0.18)' : 'rgba(125,181,255,0.16)');
+    fillGrad.addColorStop(1, light ? 'rgba(56,132,222,0.02)' : 'rgba(125,181,255,0.02)');
+    ctx.fillStyle = fillGrad;
     ctx.fill();
 
     if (highlightIndex !== -1) {
@@ -1318,15 +1420,15 @@ function drawSpark(canvas, data) {
       ctx.beginPath();
       ctx.moveTo(pt.x, 0);
       ctx.lineTo(pt.x, H);
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.strokeStyle = light ? 'rgba(13,23,32,0.35)' : 'rgba(255,255,255,0.3)';
       ctx.lineWidth = 1;
       ctx.setLineDash([2, 2]);
       ctx.stroke();
       ctx.setLineDash([]);
 
       ctx.beginPath();
-      ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2);
-      ctx.fillStyle = '#fff';
+      ctx.arc(pt.x, pt.y, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = light ? '#0d1720' : '#fff';
       ctx.fill();
 
       let label = `${pointData.val.toFixed(1)}°`;
@@ -1336,14 +1438,16 @@ function drawSpark(canvas, data) {
         label = `${timeStr} • ${label}`;
       }
 
-      ctx.font = "10px sans-serif";
+      ctx.font = "600 10px Inter, sans-serif";
       const textWidth = ctx.measureText(label).width;
       let tx = pt.x + 6;
       if (tx + textWidth > W) tx = pt.x - textWidth - 6;
 
-      ctx.fillStyle = 'rgba(0,0,0,0.7)';
-      ctx.fillRect(tx - 3, 2, textWidth + 6, 15);
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = light ? 'rgba(255,255,255,0.92)' : 'rgba(2,9,16,0.78)';
+      ctx.beginPath();
+      ctx.roundRect(tx - 4, 2, textWidth + 8, 15, 4);
+      ctx.fill();
+      ctx.fillStyle = light ? '#0d1720' : '#fff';
       ctx.fillText(label, tx, 13);
     }
   }
@@ -1487,18 +1591,17 @@ async function loadAlmanacInsights(forceRefresh = false) {
     }
 
     let html = '';
-    insights.forEach(insight => {
+    insights.forEach((insight, index) => {
       html += `
-        <div class="ai-insight-item">
-          <svg class="icon" style="width:12px; height:12px; fill:var(--accent); flex-shrink:0; margin-top:2px;" viewBox="0 0 24 24">
-            <circle cx="12" cy="12" r="3"/>
-          </svg>
-          <span>${insight}</span>
+        <div class="ai-insight-item" style="--enter-delay:${index * 90}ms">
+          <span>${escapeHtml(insight)}</span>
         </div>
       `;
     });
 
     container.innerHTML = html;
+    const insightsColumn = document.getElementById('aiInsightsContainer');
+    if (insightsColumn) insightsColumn.classList.add('has-insights');
 
     // Update timestamp
     if (timestampEl && data.timestamp) {
@@ -1670,7 +1773,10 @@ async function loadAlmanac(weatherData) {
   if(elDelta) elDelta.innerHTML = '<span style="opacity:0.5">Loading...</span>';
 
   try {
-    const res = await fetch('/api/almanac', { timeout: 20000 });
+    const controller = new AbortController();
+    const abortTimer = setTimeout(() => controller.abort(), 20000);
+    const res = await fetch('/api/almanac', { signal: controller.signal });
+    clearTimeout(abortTimer);
 
     if (!res.ok) {
       throw new Error(`API returned ${res.status}`);
@@ -1758,12 +1864,14 @@ function renderSensors(data, history) {
     return valA - valB;
   });
 
-  processedItems.forEach(item => {
+  processedItems.forEach((item, index) => {
     let card = elements.grid.querySelector(`[data-device="${item.device}"]`);
-    
+
     if (!card) {
       card = document.createElement('div');
       card.dataset.device = item.device;
+      card.classList.add('card-enter');
+      card.style.setProperty('--enter-delay', `${Math.min(index * 70, 560)}ms`);
       card.innerHTML = `
         <div class="toprow">
           <div class="title">
@@ -1776,6 +1884,7 @@ function renderSensors(data, history) {
           <div class="temp-wrap">
             <span class="temp"></span>
             <span class="unit"></span>
+            <span class="trend"></span>
           </div>
           <div class="badges">
             <div class="humidity-badge"></div>
@@ -1804,11 +1913,12 @@ function renderSensors(data, history) {
     }
 
     const stateClass = sensorState.needsAttention ? 'attention-card' : (sensorState.outdoorCondition ? 'condition-card' : '');
-    card.className = `card sensor-card ${cls} ${staleClass} ${stateClass}`;
+    const enterClass = card.classList.contains('card-enter') ? 'card-enter' : '';
+    card.className = `card sensor-card ${cls} ${staleClass} ${stateClass} ${enterClass}`;
 
     card.querySelector('.name').textContent = displaySensorName(item);
     card.querySelector('.device').textContent = item.device;
-    card.querySelector('.temp').textContent = fmt(displayTemp, 1);
+    animateNumber(card.querySelector('.temp'), isValid(displayTemp) ? displayTemp : null, 1);
     card.querySelector('.unit').textContent = `\u00b0${unit}`;
 
     const tagWrap = card.querySelector('.sensor-tags');
@@ -1818,10 +1928,8 @@ function renderSensors(data, history) {
     stateTag.textContent = sensorComfortLabel(item, sensorState);
     tagWrap.appendChild(stateTag);
     
-    const humBadge = card.querySelector('.humidity-badge');
-    humBadge.textContent = isValid(item.humidity) ? `${fmt(item.humidity, 0)}%` : '--%';
-    humBadge.className = `humidity-badge ${item.humidity < 30 || item.humidity > 60 ? 'humidity-bad' : ''}`;
-    
+    renderHumidityRing(card.querySelector('.humidity-badge'), item.humidity);
+
     const batBadge = card.querySelector('.battery-badge');
     if (isValid(item.battery)) {
         batBadge.style.display = ''; 
@@ -1856,6 +1964,8 @@ function renderSensors(data, history) {
 
       return { val: unit === 'F' ? hF : hC, ts: p.timestamp };
     }).filter(p => p && isValid(p.val)); 
+
+    renderTrend(card.querySelector('.trend'), computeTrend(points));
 
     const canvas = card.querySelector('canvas');
     const newSeriesStr = JSON.stringify(points);
@@ -1910,7 +2020,7 @@ async function loadData() {
     }
 
     const readings = await rRead.json();
-    const history = await rHist.json();
+    const history = rHist.ok ? await rHist.json() : { series: {} };
 
     // Only render if we have data - prevents panels from disappearing on empty response
     if (readings && readings.items && readings.items.length > 0) {
@@ -1937,9 +2047,79 @@ async function loadData() {
 }
 
 /* === WEATHER LOGIC === */
+let _lastWeather = null;
+
+function renderWeather() {
+  if (!_lastWeather) return;
+  const { data, locName } = _lastWeather;
+  const dispT = f => isValid(f) ? Math.round(unit === 'C' ? fToC(f) : f) : '--';
+
+  document.querySelectorAll('.skeleton').forEach(el => el.classList.remove('skeleton'));
+
+  elements.weather.loc.textContent = locName;
+  const currentTemp = data.current.temperature_2m;
+  animateNumber(elements.weather.temp, unit === 'C' ? fToC(currentTemp) : currentTemp, 1);
+  const unitEl = document.getElementById('weatherUnit');
+  if (unitEl) unitEl.textContent = `°${unit}`;
+  elements.weather.hum.textContent = `Humidity ${data.current.relative_humidity_2m}%`;
+  elements.weather.wind.textContent = `Wind ${data.current.wind_speed_10m} mph`;
+
+  const code = data.current.weathercode;
+  const desc = WEATHER_DESC[code] || "Unknown";
+  const timeStr = new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+  applyWeatherScene(code, data.daily, data.current);
+  if (elements.weather.condition) elements.weather.condition.textContent = desc.replace(' Sky', '');
+  elements.weather.status.textContent = `${desc}, updated ${timeStr}`;
+
+  const d = data.daily;
+  elements.weather.daily.textContent = `Today ${dispT(d.temperature_2m_min[0])} / ${dispT(d.temperature_2m_max[0])}° with ${d.precipitation_probability_max[0]}% rain.`;
+
+  let html = '';
+  const forecastCount = Math.min(10, d.time.length);
+  const lows = d.temperature_2m_min.slice(0, forecastCount);
+  const highs = d.temperature_2m_max.slice(0, forecastCount);
+  const rangeMin = Math.min(...lows);
+  const rangeMax = Math.max(...highs);
+  const hourlyTempsByDay = buildHourlyTempsByDay(data.hourly);
+  const chartTemps = d.time.slice(0, forecastCount).flatMap(day => hourlyTempsByDay.get(day) || []);
+  const chartMin = Math.min(rangeMin, ...(chartTemps.length ? chartTemps : lows));
+  const chartMax = Math.max(rangeMax, ...(chartTemps.length ? chartTemps : highs));
+  const maxRain = Math.max(...d.precipitation_probability_max.slice(0, forecastCount));
+  if (elements.weather.rainBadge) {
+    elements.weather.rainBadge.textContent = maxRain < 5 ? 'Rain risk stays under 5%' : `Peak rain risk ${maxRain}%`;
+  }
+
+  for(let i=0; i<forecastCount; i++) {
+    const date = new Date(d.time[i] + 'T00:00:00');
+    const dayName = i === 0 ? 'Today' : date.toLocaleDateString('en-US', {weekday:'short'});
+    const low = Math.round(d.temperature_2m_min[i]);
+    const high = Math.round(d.temperature_2m_max[i]);
+    const tempHill = createTempHillSvg(i, hourlyTempsByDay.get(d.time[i]) || [], chartMin, chartMax, low, high);
+    html += `
+      <div class="forecast-tile${i === 0 ? ' is-today' : ''}" style="--enter-delay:${i * 45}ms">
+        <div class="day">${dayName}</div>
+        <div class="icon">${getIcon(d.weathercode[i])}</div>
+        <div class="temps"><span class="low">${dispT(low)}</span><span class="high">${dispT(high)}</span></div>
+        ${tempHill}
+        <div class="rain">${d.precipitation_probability_max[i]}% rain</div>
+      </div>`;
+  }
+  elements.weather.upcoming.innerHTML = html;
+
+  // Weather Sparkline (next 24 hours)
+  const hourly = data.hourly.temperature_2m.slice(0, 24).map((v, i) => ({
+    val: unit === 'C' ? fToC(v) : v,
+    ts: data.hourly.time?.[i]
+  }));
+  if (elements.weather.canvas) {
+    elements.weather.canvas.dataset.series = JSON.stringify(hourly);
+    drawSpark(elements.weather.canvas, hourly);
+  }
+}
+
 async function loadWeather() {
   let lat = 36.17, lon = -115.14, locName = "Las Vegas";
-  
+
   if (location.protocol === 'https:' || location.hostname === 'localhost') {
     try {
       const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, {timeout:5000}));
@@ -1950,61 +2130,11 @@ async function loadWeather() {
   }
 
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weathercode,wind_speed_10m,wind_direction_10m,wind_gusts_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode,sunrise,sunset&hourly=temperature_2m&temperature_unit=fahrenheit&windspeed_unit=mph&forecast_days=11&timezone=auto`;
-  
+
   try {
     const data = await fetch(url).then(r=>r.json());
-    document.querySelectorAll('.skeleton').forEach(el => el.classList.remove('skeleton'));
-
-    elements.weather.loc.textContent = locName;
-    elements.weather.temp.textContent = data.current.temperature_2m.toFixed(1);
-    elements.weather.hum.textContent = `Humidity ${data.current.relative_humidity_2m}%`;
-    elements.weather.wind.textContent = `Wind ${data.current.wind_speed_10m} mph`;
-    
-    const code = data.current.weathercode;
-    const desc = WEATHER_DESC[code] || "Unknown";
-    const timeStr = new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
-    applyWeatherScene(code, data.daily, data.current);
-    if (elements.weather.condition) elements.weather.condition.textContent = desc.replace(' Sky', '');
-    elements.weather.status.textContent = `${desc}, updated ${timeStr}`;
-
-    const d = data.daily;
-    elements.weather.daily.textContent = `Today ${Math.round(d.temperature_2m_min[0])} / ${Math.round(d.temperature_2m_max[0])} F with ${d.precipitation_probability_max[0]}% rain.`;
-
-    let html = '';
-    const forecastCount = Math.min(10, d.time.length);
-    const lows = d.temperature_2m_min.slice(0, forecastCount);
-    const highs = d.temperature_2m_max.slice(0, forecastCount);
-    const rangeMin = Math.min(...lows);
-    const rangeMax = Math.max(...highs);
-    const hourlyTempsByDay = buildHourlyTempsByDay(data.hourly);
-    const chartTemps = d.time.slice(0, forecastCount).flatMap(day => hourlyTempsByDay.get(day) || []);
-    const chartMin = Math.min(rangeMin, ...(chartTemps.length ? chartTemps : lows));
-    const chartMax = Math.max(rangeMax, ...(chartTemps.length ? chartTemps : highs));
-    const maxRain = Math.max(...d.precipitation_probability_max.slice(0, forecastCount));
-    if (elements.weather.rainBadge) {
-      elements.weather.rainBadge.textContent = maxRain < 5 ? 'Rain risk stays under 5%' : `Peak rain risk ${maxRain}%`;
-    }
-
-    for(let i=0; i<forecastCount; i++) {
-      const date = new Date(d.time[i] + 'T00:00:00');
-      const dayName = i === 0 ? 'Today' : date.toLocaleDateString('en-US', {weekday:'short'});
-      const low = Math.round(d.temperature_2m_min[i]);
-      const high = Math.round(d.temperature_2m_max[i]);
-      const tempHill = createTempHillSvg(i, hourlyTempsByDay.get(d.time[i]) || [], chartMin, chartMax, low, high);
-      html += `
-        <div class="forecast-tile">
-          <div class="day">${dayName}</div>
-          <div class="icon">${getIcon(d.weathercode[i])}</div>
-          <div class="temps"><span class="low">${low}</span><span class="high">${high}</span></div>
-          ${tempHill}
-          <div class="rain">${d.precipitation_probability_max[i]}% rain</div>
-        </div>`;
-    }
-    elements.weather.upcoming.innerHTML = html;
-
-    // Weather Sparkline
-    const hourly = data.hourly.temperature_2m.slice(0, 24).map(v => ({ val: v })); 
-    drawSpark(elements.weather.canvas, hourly);
+    _lastWeather = { data, locName };
+    renderWeather();
     loadWeatherAlerts(lat, lon, locName);
     loadPollen(lat, lon);
 
@@ -2013,11 +2143,16 @@ async function loadWeather() {
     loadAlmanacInsights();
 
   } catch (e) {
+    console.error("Weather error:", e);
     elements.weather.status.textContent = "Weather Unavailable";
   }
 }
 
 /* === INIT === */
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('service-worker.js').catch(() => {});
+}
+
 initSettings();
 
 // Initialize unit buttons based on saved preference
@@ -2034,9 +2169,8 @@ setInterval(loadUsWeatherActivity, 15 * 60 * 1000);
 
 // Export function
 function exportData() {
-  // Create a link to download the CSV file
   const link = document.createElement('a');
-  link.href = '/govee_readings.csv';
+  link.href = '/api/export';
   link.download = `govee_readings_${new Date().toISOString().split('T')[0]}.csv`;
   document.body.appendChild(link);
   link.click();
