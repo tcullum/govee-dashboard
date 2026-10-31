@@ -2,12 +2,17 @@
 // Network-first for everything so updates always land; cache is only an
 // offline fallback for the static shell.
 
-const CACHE_NAME = "house-weather-v4.3";
+const CACHE_NAME = "house-weather-v6.36";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
   "./app.js",
   "./style.css",
+  "./assets/dashboard-tabs.css",
+  "./assets/desktop-overview.css",
+  "./assets/desktop-overview.js",
+  "./assets/d3-array.min.js",
+  "./assets/d3-geo.min.js",
   "./manifest.json",
   "./favicon.ico",
   "./favicon-16x16.png",
@@ -40,6 +45,8 @@ self.addEventListener("fetch", event => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
   if (event.request.method !== "GET") return;
+  const staticPaths = new Set(["/", "/index.html", "/app.js", "/style.css", "/assets/dashboard-tabs.css", "/assets/d3-array.min.js", "/assets/d3-geo.min.js", "/manifest.json", "/service-worker.js", "/favicon.ico", "/favicon-16x16.png", "/favicon-32x32.png"]);
+  if (!staticPaths.has(url.pathname)) return;
 
   event.respondWith(
     (async () => {
@@ -52,7 +59,8 @@ self.addEventListener("fetch", event => {
         return response;
       } catch (e) {
         const cached = await caches.match(event.request);
-        return cached || caches.match("./index.html");
+        if (cached) return cached;
+        return event.request.mode === "navigate" ? caches.match("./index.html") : Response.error();
       }
     })()
   );

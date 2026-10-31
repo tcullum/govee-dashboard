@@ -7,11 +7,24 @@
       - "${PORT:-8000}:${PORT:-8000}"
     environment:
       GOVEE_API_KEY: ${GOVEE_API_KEY:?Set GOVEE_API_KEY in .env}
+      GOOGLE_POLLEN_API_KEY: ${GOOGLE_POLLEN_API_KEY:-}
+      POLLEN_CACHE_SECONDS: ${POLLEN_CACHE_SECONDS:-17280}
       NOAA_TOKEN: ${NOAA_TOKEN:-}
+      AI_PROVIDER: openrouter
+      OPENROUTER_MODEL: anthropic/claude-sonnet-4.6
+      OPENROUTER_API_KEY_FILE: /run/secrets/openrouter_key
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
       PORT: ${PORT:-8000}
+      WEATHER_PUBLIC_ORIGIN: "https://weather.cullum.dad"
       LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-30}
+      GOVEE_DEVICE_CACHE_SECONDS: ${GOVEE_DEVICE_CACHE_SECONDS:-1800}
     volumes:
       - ./:/app
+    secrets:
+      - openrouter_key
     restart: unless-stopped
+
+secrets:
+  openrouter_key:
+    file: C:/Users/Thomas/OneDrive/Documents/govee.env

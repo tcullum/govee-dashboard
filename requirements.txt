@@ -1,5 +1,6 @@
 flask>=3.0
 requests>=2.31
 anthropic>=0.40
+httpx>=0.27
 waitress>=3.0
 python-dotenv>=1.0

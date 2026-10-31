@@ -1,0 +1,99 @@
+/* Folder navigation and the sections within it. */
+.dashboard-tabs{max-width:1440px;margin:0 auto;padding:0 22px;box-sizing:border-box;display:flex;align-items:stretch;gap:5px;position:relative;z-index:1}
+.dashboard-tabs [role=tab]{isolation:isolate;position:relative;flex:1;min-width:0;min-height:50px;padding:12px 36px 12px 18px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:14px;font-weight:500;cursor:pointer;transition:color 160ms ease}
+.dashboard-tabs [role=tab]:hover,.dashboard-tabs [aria-selected=true]{color:var(--text)}
+.dashboard-tabs [aria-selected=true]{font-weight:600;color:var(--cyan-text);text-shadow:0 0 18px color-mix(in srgb,var(--cyan-text) 16%,transparent)}
+.dashboard-tabs [role=tab]:focus-visible{outline-offset:-5px}
+.folder-tab-shape{position:absolute;inset:0;width:100%;height:100%;transform:translateY(1px);overflow:visible;z-index:-1;pointer-events:none}
+.folder-tab-fill{fill:var(--surface-2)}
+.folder-tab-edge{fill:none;stroke:var(--line);stroke-width:1;stroke-linejoin:round;stroke-linecap:round}
+.dashboard-tabs [role=tab]:hover .folder-tab-fill,.dashboard-tabs [aria-selected=true] .folder-tab-fill{fill:var(--surface)}
+.dashboard-tabs [aria-selected=true] .folder-tab-edge{stroke:color-mix(in srgb,var(--muted) 40%,var(--surface));stroke-width:2}
+.dashboard-tabs [aria-selected=true]::after{content:"";position:absolute;left:1px;right:1px;top:100%;height:3px;background:var(--surface);z-index:-2}
+.tab-label-short{display:none}
+.tab-attention{position:absolute;right:30px;top:9px;width:7px;height:7px;border-radius:50%;background:var(--amber-text)}
+.tab-attention[hidden]{display:none}
+.dashboard-panel{padding:20px;border:2px solid color-mix(in srgb,var(--muted) 40%,var(--surface));border-radius:22px;background:var(--surface);box-shadow:0 12px 32px #071e2418;box-sizing:border-box}
+.dashboard-panel[hidden]{display:none!important}
+#panel-house{grid-template-areas:"weather weather weather"}
+#panel-local{grid-template-areas:"detail detail detail" "outlook outlook outlook" "forecast forecast forecast" "attention attention attention"}
+#panel-interesting{grid-template-areas:"usactivity usactivity usactivity"}
+#panel-ai{grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);grid-template-areas:"insights ask"}
+.local-outlook{grid-area:outlook;min-width:0}
+.local-outlook .outlook-heading{color:var(--muted)}
+.local-outlook .outlook-heading span:last-child{color:var(--text)}
+.local-outlook .weather-summary-row{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:12px}
+/* Selected-day (defaults to today) detail card: the "now" weather, outside the forecast rail. */
+.local-detail,.dashboard-panel .local-detail{grid-area:detail;min-width:0;padding:0;background:transparent;overflow:visible}
+.local-detail:has(.forecast-detail:empty){display:none}
+.local-detail .forecast-detail{margin:0;padding:18px 20px;border-radius:inherit}
+.dashboard-panel .local-detail .forecast-detail{background:linear-gradient(180deg,color-mix(in srgb,var(--surface-2) 72%,var(--surface)),var(--surface) 85%)}
+.local-detail .fd-title{font-size:18px}
+.local-detail .fd-stats{grid-template-columns:repeat(auto-fit,minmax(118px,1fr))}
+/* Local tab: the 10-day forecast lives in a narrow right-hand rail (~25%) so
+   highs/lows stack vertically; outlook + attention take the remaining width. */
+@media(min-width:1181px){
+ #panel-local{grid-template-columns:minmax(0,3fr) minmax(300px,1fr);grid-template-rows:auto auto 1fr;grid-template-areas:"detail forecast" "outlook forecast" "attention forecast";align-items:start}
+ #panel-local .forecast-column{align-self:stretch;padding:16px 14px}
+ #panel-local .forecast-head{flex-wrap:wrap;gap:8px;margin-bottom:10px}
+ #panel-local .rain-badge{font-size:12px;padding:6px 10px;min-height:0}
+ #panel-local .upcoming-forecast{gap:5px;margin-top:10px}
+ #panel-local .forecast-row{--fc-day:50px;--fc-icon:30px;--fc-rain:36px;--fc-temp:32px;column-gap:8px;grid-template-columns:var(--fc-day) var(--fc-icon) var(--fc-rain) var(--fc-temp) minmax(48px,1fr) var(--fc-temp)}
+ #panel-local .forecast-row .forecast-wind{display:none}
+ #panel-local .forecast-row-head{padding:0 10px 2px;font-size:10px;letter-spacing:.05em}
+ #panel-local .forecast-row-head .range-head{visibility:hidden}
+ #panel-local .forecast-tile{min-height:46px;padding:6px 10px}
+ #panel-local .forecast-tile .day strong{font-size:13px}
+ #panel-local .forecast-tile .day small{display:none}
+ #panel-local .forecast-tile .icon{width:30px;height:30px;filter:drop-shadow(0 4px 6px rgba(3,12,22,.2))}
+ #panel-local .forecast-tile .weather-icon-svg{width:28px;height:28px}
+ #panel-local .forecast-tile .rain{font-size:12px}
+ #panel-local .forecast-tile .low,#panel-local .forecast-tile .high{font-size:14px}
+ #panel-local .forecast-tile .range{height:7px}
+ #panel-local .attention-column{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+/* The folder outline supplies structure; information sections use soft washes. */
+.dashboard-panel .card{border:0;box-shadow:none;background:linear-gradient(180deg,color-mix(in srgb,var(--surface-2) 72%,var(--surface)),var(--surface) 85%)}
+[data-theme=light] .dashboard-panel .card:not(#weatherCard){background:linear-gradient(180deg,color-mix(in srgb,var(--surface-3) 58%,var(--surface)),var(--surface) 85%)}
+#panel-house #weatherCard{border:0;box-shadow:none}
+.dashboard-panel .card::after,.dashboard-panel .ask-column::before{display:none}
+.dashboard-panel .forecast-detail{border:0;box-shadow:none;background:linear-gradient(180deg,var(--surface-2),transparent)}
+.dashboard-panel .us-map-wrap{border:0;box-shadow:none}
+#weatherAlerts{max-width:1440px;margin:0 auto 16px}
+#weatherAlerts:has(.weather-alert.empty){margin-bottom:12px}
+#weatherAlerts .weather-alert.empty{border:0;background:transparent;box-shadow:none;font-size:12px;color:var(--muted)}
+.dashboard-panel .fd-stat,.dashboard-panel .fd-hour,.dashboard-panel .attention-item,.dashboard-panel .forecast-tile{border-color:transparent;background:linear-gradient(180deg,color-mix(in srgb,var(--surface-2) 80%,transparent),transparent)}
+.dashboard-panel .forecast-tile.is-selected{box-shadow:inset 0 0 0 1px var(--cyan-text);background:color-mix(in srgb,var(--cyan) 9%,var(--surface))}
+#panel-house .house-sensor,#panel-house #weatherCard .sun-uv{border:0;box-shadow:0 6px 18px #081f2418}
+/* Utilities follow the active view in normal document flow. */
+.app-footer{position:static;top:auto;border-bottom:0;border-top:1px solid var(--line);margin-top:8px;padding-bottom:max(20px,env(safe-area-inset-bottom));flex-wrap:wrap}
+.app-footer h1{flex-wrap:wrap}
+@media(max-width:720px){
+ .overview-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}
+ .overview-stats>div{display:grid;grid-template-rows:2.8em auto auto;gap:9px}
+ .overview-stats .mini-label{font-size:12px;line-height:1.4;align-self:start}
+ .overview-stats strong{line-height:1.2}
+ .dashboard-tabs{gap:3px;padding-inline:18px}
+ .dashboard-tabs [role=tab]{padding:10px 10px 10px 3px;font-size:12px;line-height:1.4;min-height:56px}
+ .tab-label-full.has-short{display:none}
+ .tab-label-short{display:inline}
+ .tab-attention{right:11px;top:5px;width:6px;height:6px}
+ .dashboard-panel{padding:10px;border-radius:18px}
+ #panel-local .local-outlook{order:0}
+ .local-outlook .outlook-heading{flex-wrap:wrap}
+ #panel-house #weatherCard{min-height:calc(var(--house-stage-top,300px) + 320px + var(--sensor-rows,2)*110px)}
+ #panel-house #weatherCard .temp{font-size:64px}
+ #panel-house #weatherCard .weather-reading{margin-top:12px}
+ #panel-house #weatherCard .weather-metrics{font-size:13px;gap:6px;margin-top:0}
+ #panel-house .moon-summary{top:calc(var(--house-stage-top,300px) - 55px)}
+ #panel-house .house-art{top:var(--house-stage-top,300px);height:230px}
+ #panel-house #weatherCard .sun-uv{top:calc(var(--house-stage-top,300px) + 30px);width:125px;min-height:88px;padding:10px 12px}
+ #panel-house .sun-uv strong{font-size:24px}
+ #panel-house #weatherCard .sky-orb{top:calc(var(--house-stage-top,300px) + 45px)}
+ #panel-house .house-scene-footer{top:calc(var(--house-stage-top,300px) + 230px)}
+ #panel-house #weatherCard .house-sensors{top:calc(var(--house-stage-top,300px) + 280px)}
+ #panel-house .moon-tooltip{left:0;right:auto;max-width:min(210px,calc(100vw - 96px))}
+ .app-footer{gap:16px}
+ .app-footer .controls{width:100%;justify-content:flex-end}
+}
+@media(prefers-reduced-motion:reduce){.dashboard-tabs [role=tab]{transition:none}}

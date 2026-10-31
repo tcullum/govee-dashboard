@@ -14,118 +14,105 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
-  <link rel="stylesheet" href="style.css?v=4.3">
+  <link rel="stylesheet" href="style.css?v=6.31">
+  <link rel="stylesheet" href="assets/dashboard-tabs.css?v=6.34">
+  <link rel="stylesheet" href="assets/desktop-overview.css?v=6.36">
 </head>
 
 <body>
-<header class="app-header">
-  <h1>
-    <span class="app-mark" aria-hidden="true">
-      <svg viewBox="0 0 24 24"><path d="M12 3 3.5 10.2a1 1 0 0 0-.35.76V20a1 1 0 0 0 1 1H10v-5.4a2 2 0 0 1 4 0V21h5.85a1 1 0 0 0 1-1v-9.04a1 1 0 0 0-.35-.76L12 3Z"/></svg>
-    </span>
-    <span class="app-title-full">House Weather</span><span class="app-title-short">House</span> <span class="chip" id="count">0</span><span class="chip freshness-chip" id="readingsFreshness"><span class="live-dot" aria-hidden="true"></span>Loading</span><span class="chip alert-chip" id="alertCount" style="display:none;">Attention 0</span></h1>
-  <div class="controls" id="toolbar">
-    <div class="unit-toggle">
-      <button id="unitF" class="btn active" title="Fahrenheit">F</button>
-      <button id="unitC" class="btn" title="Celsius">C</button>
-    </div>
 
-    <div class="theme-toggle">
-      <button class="btn theme-btn" id="themeDark" title="Dark mode">
-        <svg class="icon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
-      </button>
-      <button class="btn theme-btn" id="themeLight" title="Light mode">
-        <svg class="icon" viewBox="0 0 24 24"><path d="M12 6a6 6 0 1 0 0 12A6 6 0 0 0 12 6Zm5.24 13.76 1.41 1.41 1.41-1.41-1.41-1.41-1.41 1.41ZM4.84 17.24 3.42 18.66l1.41 1.41 1.42-1.41-1.41-1.41Z"/></svg>
-      </button>
-    </div>
-
-    <button class="btn icon-btn" id="compactToggleBtn" title="Compact layout"><svg class="icon" viewBox="0 0 24 24"><path d="M4 7h6v6H4V7Zm10 0h6v6h-6V7ZM4 15h6v2H4v-2Zm10 0h6v2h-6v-2Z"/></svg></button>
-    <button class="btn icon-btn" id="exportBtn" title="Export CSV"><svg class="icon" viewBox="0 0 24 24"><path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z"/></svg></button>
-  </div>
-</header>
 
 <main>
+  <section class="home-overview" id="homeOverview" aria-labelledby="overviewTitle">
+    <div class="overview-heading"><div class="section-kicker">Home / Atmosphere</div><h2 id="overviewTitle">Home, in its element.</h2><p id="overviewDate">Your home and the day ahead, in view.</p></div>
+    <div class="overview-stats">
+      <div><span class="mini-label">Inside average</span><strong id="overviewIndoor">—</strong><small id="overviewIndoorNote">Waiting for fresh readings</small></div>
+      <div><span class="mini-label">Indoor humidity</span><strong id="overviewHumidity">—</strong><small>Fresh indoor sensors</small></div>
+      <div><span class="mini-label">Reporting</span><strong id="overviewReporting">—</strong><small id="overviewReportingNote">Sensor freshness</small></div>
+    </div>
+  </section>
   <div id="notice" class="notice"></div>
 
-  <section class="alert-banner" id="alertBanner" hidden>
-    <div class="alert-icon">!</div>
-    <div>
-      <h2 id="alertTitle">House looks stable</h2>
-      <p id="alertBody">Waiting for live readings.</p>
-    </div>
-    <div class="alert-pills" id="alertPills"></div>
-  </section>
+        <div class="weather-alerts" id="weatherAlerts" aria-live="polite">
+          <div class="weather-alert empty">Checking active weather alerts...</div>
+        </div>
 
-  <div class="dash-layout">
-    <div class="location-strip" id="locationStrip"></div>
-
+  <div class="dashboard-tabs" role="tablist" aria-label="Dashboard views">
+    <button type="button" role="tab" id="tab-house" aria-controls="panel-house" aria-selected="true" tabindex="0"><svg class="folder-tab-shape" viewBox="0 0 300 56" preserveAspectRatio="none" aria-hidden="true"><path class="folder-tab-fill" d="M0 56Q13 56 13 42V15Q13 1 27 1H251C273 1 264 56 300 56Z"/><path class="folder-tab-edge" d="M0 56Q13 56 13 42V15Q13 1 27 1H251C273 1 264 56 300 56" vector-effect="non-scaling-stroke"/></svg>House</button>
+    <button type="button" role="tab" id="tab-local" aria-controls="panel-local" aria-selected="false" tabindex="-1"><svg class="folder-tab-shape" viewBox="0 0 300 56" preserveAspectRatio="none" aria-hidden="true"><path class="folder-tab-fill" d="M0 56Q13 56 13 42V15Q13 1 27 1H251C273 1 264 56 300 56Z"/><path class="folder-tab-edge" d="M0 56Q13 56 13 42V15Q13 1 27 1H251C273 1 264 56 300 56" vector-effect="non-scaling-stroke"/></svg>Local / Forecast</button>
+    <button type="button" role="tab" id="tab-interesting" aria-controls="panel-interesting" aria-selected="false" tabindex="-1"><svg class="folder-tab-shape" viewBox="0 0 300 56" preserveAspectRatio="none" aria-hidden="true"><path class="folder-tab-fill" d="M0 56Q13 56 13 42V15Q13 1 27 1H251C273 1 264 56 300 56Z"/><path class="folder-tab-edge" d="M0 56Q13 56 13 42V15Q13 1 27 1H251C273 1 264 56 300 56" vector-effect="non-scaling-stroke"/></svg><span class="tab-label-full has-short">Interesting Weather</span><span class="tab-label-short" aria-hidden="true">US Weather</span></button>
+    <button type="button" role="tab" id="tab-ai" aria-controls="panel-ai" aria-selected="false" tabindex="-1"><svg class="folder-tab-shape" viewBox="0 0 300 56" preserveAspectRatio="none" aria-hidden="true"><path class="folder-tab-fill" d="M0 56Q13 56 13 42V15Q13 1 27 1H251C273 1 264 56 300 56Z"/><path class="folder-tab-edge" d="M0 56Q13 56 13 42V15Q13 1 27 1H251C273 1 264 56 300 56" vector-effect="non-scaling-stroke"/></svg>AI Insights</button>
+  </div>
+  <div class="dash-layout dashboard-panel" id="panel-house" role="tabpanel" aria-labelledby="tab-house" tabindex="0">
     <section class="weather-column">
       <div class="card weather-card" id="weatherCard">
-        <div class="weather-stars" aria-hidden="true">
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-        <div class="weather-sun" aria-hidden="true"></div>
-        <div class="weather-clouds" aria-hidden="true">
-          <span class="cloud-wisp cloud-wisp-a"></span>
-          <span class="cloud-wisp cloud-wisp-b"></span>
-          <span class="cloud-wisp cloud-wisp-c"></span>
-        </div>
-        <div class="weather-gusts" aria-hidden="true">
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-        <div class="weather-horizon" aria-hidden="true">
-          <svg class="horizon-house" viewBox="0 0 96 72">
-            <ellipse class="hw-shadow" cx="48" cy="65.5" rx="31" ry="4"/>
-            <rect class="hw-trunk" x="13" y="48" width="4" height="17" rx="1.5"/>
-            <circle class="hw-leaf" cx="15" cy="40" r="10"/>
-            <circle class="hw-leaf2" cx="22" cy="46" r="7"/>
-            <g class="hw-smoke">
-              <circle cx="63" cy="13" r="3"/>
-              <circle cx="63" cy="13" r="3.6"/>
-              <circle cx="63" cy="13" r="4.2"/>
+        <div class="landscape" aria-hidden="true">
+          <div class="sky-stars"></div><div class="sky-orb"></div>
+          <div class="sky-cloud cloud-one"></div><div class="sky-cloud cloud-two"></div>
+          <svg class="house-art" viewBox="0 0 900 570" role="presentation">
+            <defs>
+              <linearGradient id="houseRoof" x2="0.8" y2="1"><stop stop-color="#dfa477"/><stop offset="1" stop-color="#af7259"/></linearGradient>
+              <linearGradient id="houseGlass" x2="1" y2="1"><stop stop-color="#b5dce0"/><stop offset="1" stop-color="#629aa6"/></linearGradient>
+              <pattern id="roofTiles" width="42" height="28" patternUnits="userSpaceOnUse" patternTransform="rotate(28)"><path d="M0 0H42V28" fill="none" stroke="#855841" stroke-opacity=".25"/></pattern>
+              <filter id="houseShadow"><feGaussianBlur stdDeviation="15"/></filter>
+              <g id="houseTree"><path d="M0 0v-84" stroke="#73644a" stroke-width="9"/><ellipse cy="-102" rx="30" ry="44" fill="#658970"/><ellipse cx="-7" cy="-119" rx="23" ry="31" fill="#8cae85"/><ellipse cx="8" cy="-127" rx="16" ry="23" fill="#a3bb91"/></g>
+            </defs>
+            <path d="M15 315 155 175 275 300 375 200 530 325 704 168 890 338" fill="#80a9a0" opacity=".09"/>
+            <ellipse cx="460" cy="464" rx="295" ry="58" fill="#081f24" opacity=".45" filter="url(#houseShadow)"/>
+            <path d="m125 333 362-184 325 184-361 187Z" fill="#8eaa8c"/>
+            <path d="m125 333 326 187v19L125 352Z" fill="#607f71"/><path d="m451 520 361-187v19L451 539Z" fill="#496d64"/>
+            <path d="m148 333 339-170 302 170-338 174Z" fill="#a9b799"/>
+            <g id="housePool" transform="translate(0 44)"><path d="m603 288 91-45 76 44-91 46Z" fill="#e3d5b7"/><path d="m615 288 79-38 63 37-79 38Z" fill="#76abb4"/></g>
+            <use id="rearHouseTree" href="#houseTree" x="405" y="215"/>
+            <path d="m295 250 185 105v100L295 350Z" fill="#ead9b4"/><path d="m480 455 174-91V260l-174 95Z" fill="#c4b38c"/>
+            <path d="m286 347 194 112v15L286 362Z" fill="#ab9978"/><path d="m480 459 184-95v15l-184 95Z" fill="#948567"/>
+            <path d="m322 260 56 32v66l-56-32Z" fill="url(#houseGlass)" stroke="#f7e9cc" stroke-width="8"/><path d="m349 278 0 63" stroke="#efdfbd" stroke-width="4"/>
+            <path d="m515 337 94-48v65l-94 49Z" fill="url(#houseGlass)" stroke="#e3d7b6" stroke-width="8"/><path d="m561 314 0 64" stroke="#e3d7b6" stroke-width="4"/>
+            <path d="m413 330 42 24v62l-42-25Z" fill="#67786b"/><circle cx="445" cy="385" r="2.5" fill="#e7d8b6"/>
+            <g class="house-interior">
+              <path d="m272 234 211-110 194 115-198 105Z" fill="#d1c2a2" stroke="#f2dfbb" stroke-width="5"/>
+              <path d="m483 124 0 108 100 61M483 232l-106 56" fill="none" stroke="#f0e0bd" stroke-width="10" stroke-linejoin="round"/>
+              <path d="m294 237 84-43 75 43-79 42Z" fill="#9caa90"/>
+              <path d="m312 229 41-21 28 16-40 21Z" fill="#52766c" stroke="#3f6058" stroke-width="3"/>
+              <path d="m309 225 0 15 34 20v-15Z" fill="#668b7d"/><path d="m343 245 41-21v14l-41 22Z" fill="#496f64"/>
+              <path d="m397 247 27-14 21 13-26 14Z" fill="#c49d73"/>
+              <path d="m525 211 51-26 42 26-51 27Z" fill="#a77f59" stroke="#e2c9a3" stroke-width="3"/>
+              <path d="m556 192 22-11v21l-22 11Z" fill="#335e69" stroke="#d4ded1" stroke-width="3"/>
+              <path d="m554 245 17-9 15 9-17 9Z" fill="#577a6d"/>
+              <text x="396" y="220" text-anchor="middle" fill="#28473f" font-size="15" font-weight="600">Living room</text>
+              <text x="579" y="265" text-anchor="middle" fill="#28473f" font-size="15" font-weight="600">Office</text>
             </g>
-            <rect class="hw-chimney" x="59" y="15" width="8" height="16" rx="1"/>
-            <rect class="hw-cap" x="57.5" y="12.5" width="11" height="4" rx="1.5"/>
-            <path class="hw-gable" d="M28 40 48 19 68 40Z"/>
-            <rect class="hw-wall" x="28" y="39" width="40" height="26" rx="1.5"/>
-            <path class="hw-roof" d="M24.5 41 48 16.5 71.5 41"/>
-            <circle class="hw-window hw-window-attic" cx="48" cy="31.5" r="3.4"/>
-            <path class="hw-door" d="M43.5 65v-12.2a4.8 4.8 0 0 1 9.6 0V65Z"/>
-            <circle class="hw-knob" cx="50.9" cy="58" r=".9"/>
-            <rect class="hw-window" x="32.5" y="45" width="9" height="10" rx="1.5"/>
-            <path class="hw-pane" d="M37 45v10M32.5 50h9"/>
-            <rect class="hw-window" x="54.5" y="45" width="9" height="10" rx="1.5"/>
-            <path class="hw-pane" d="M59 45v10M54.5 50h9"/>
-            <circle class="hw-leaf2" cx="79" cy="61" r="6"/>
-            <circle class="hw-leaf" cx="85" cy="63" r="4.5"/>
-            <path class="hw-grass" d="M25 65c1-3 2-3 3 0M71 65c1-3 2-3 3 0M36 66c1-2.6 2-2.6 3 0M58 66c1-2.6 2-2.6 3 0"/>
+
+            <g stroke="#e4dcb8" stroke-width="4" fill="none" opacity=".65"><path d="m181 313 0-29m0 17 142-73m-91 47v-28m50 3v-28M674 249l91 52v-25m-45 1v-27"/></g>
+            <use href="#houseTree" x="234" y="355"/><use href="#houseTree" x="780" y="345"/>
+            <g fill="#789877"><ellipse cx="280" cy="379" rx="22" ry="13"/><ellipse cx="311" cy="395" rx="19" ry="11"/><ellipse cx="638" cy="377" rx="22" ry="13"/></g>
+            <path d="M186 361v-42m0 21h-12v-17m12 29h12v-19" fill="none" stroke="#64866b" stroke-width="7" stroke-linecap="round"/>
+            <g class="house-pin" data-house-anchor="living"><circle cx="349" cy="307" r="11"/><circle cx="349" cy="307" r="4"/><text class="pin-number" x="349" y="307">1</text></g>
+            <g class="house-pin" data-house-anchor="office"><circle cx="561" cy="346" r="11"/><circle cx="561" cy="346" r="4"/><text class="pin-number" x="561" y="346">2</text></g>
+            <g class="house-pin outside-pin" data-house-anchor="outside"><circle cx="694" cy="287" r="11"/><circle cx="694" cy="287" r="4"/><text class="pin-number" x="694" y="287">3</text></g>
           </svg>
+          <div class="season-motes"><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="sky-precip"></div>
         </div>
-        <div class="weather-precip" aria-hidden="true"></div>
-        <div class="weather-lightning" aria-hidden="true"></div>
-        <span class="weather-shooting-star" aria-hidden="true"></span>
+        <button type="button" id="weatherMoon" class="weather-moon" hidden aria-label="Moon phase" aria-expanded="false" aria-describedby="moonPhaseTooltip">
+          <svg viewBox="0 0 100 100" aria-hidden="true"><g id="moonDisc"><circle cx="50" cy="50" r="46" fill="#24344a"/><path id="moonLitShape" fill="#e9eef0"/></g></svg>
+          <span class="moon-tooltip" id="moonPhaseTooltip" role="tooltip"><strong id="moonPhaseLabel"></strong><span>Above the local horizon<br>Clouds or terrain may obscure it</span></span>
+        </button>
+        <svg class="house-connectors" id="houseConnectors" aria-hidden="true"></svg>
+        <div class="house-sensors" id="houseSensors" aria-label="Sensors around your home"></div>
+        <div class="house-scene-footer"><span>Illustrative home &middot; live room and backyard readings</span></div>
+        <svg class="sun-connector" id="sunConnector" aria-hidden="true"></svg>
+        <div class="sun-uv" id="sunUv" role="group" aria-label="UV index hourly forecast">
+          <span>UV index</span><strong id="sunUvValue">�</strong><small id="sunUvLevel">Unavailable</small>
+          <span class="uv-caption">Hourly forecast</span>
+        </div>
+        <div class="moon-summary"><span class="mini-label">Moon phase</span><strong id="moonSummary">Calculating local moon phase…</strong></div>
         <div class="weather-topline">
           <div>
-            <div class="section-kicker">Local Weather</div>
+            <div class="section-kicker">LOCAL WEATHER <span class="season-label" id="weatherSeason"></span></div>
             <div class="device skeleton" id="weatherLocation">Detecting location...</div>
           </div>
-          <div id="weatherCondition" class="condition-chip skeleton">Loading</div>
+          <div class="weather-controls"><div id="weatherCondition" class="condition-chip skeleton">Loading</div><button type="button" id="weatherMotion" aria-label="Pause weather animation" aria-pressed="false" title="Pause weather animation">Ⅱ</button></div>
         </div>
 
         <div class="weather-reading">
@@ -139,21 +126,40 @@
           </div>
         </div>
 
-        <canvas class="spark weather-spark" id="weatherForecast"></canvas>
+
+
+      </div>
+
+    </section>
+  </div>
+  <div class="dash-layout dashboard-panel" id="panel-local" role="tabpanel" aria-labelledby="tab-local" tabindex="0" hidden>
+    <section class="card local-outlook">
+        <div class="weather-outlook">
+          <div class="outlook-heading"><span>NEXT 24 HOURS</span><span id="weatherRange">Temperature outlook</span></div>
+          <canvas class="spark weather-spark" id="weatherForecast" role="img" aria-label="Next 24 hours temperature forecast"></canvas>
+          <div class="weather-hours" id="weatherHours"></div>
+        </div>
         <div class="weather-summary-row">
           <div class="status" id="weatherStatus">Loading weather...</div>
           <div class="status skeleton" id="weatherDaily"></div>
         </div>
-        <div class="weather-alerts" id="weatherAlerts" aria-live="polite">
-          <div class="weather-alert empty">Checking active weather alerts...</div>
-        </div>
+    </section>
+    <section class="card local-detail" aria-label="Selected day details">
+      <div id="forecastDetail" class="forecast-detail" aria-live="polite"></div>
+    </section>
+    <section class="forecast-column card">
+      <div class="forecast-head">
+        <div class="section-kicker">10 Day Forecast</div>
+        <button type="button" id="rainBadge" class="rain-badge">Rain outlook loading</button>
+      </div>
+      <div id="weatherUpcoming" class="upcoming-forecast">
+        <div class="forecast-tile skeleton"></div>
+        <div class="forecast-tile skeleton"></div>
+        <div class="forecast-tile skeleton"></div>
+        <div class="forecast-tile skeleton"></div>
+        <div class="forecast-tile skeleton"></div>
       </div>
     </section>
-
-    <section class="sensor-column">
-      <div class="grid" id="grid"></div>
-    </section>
-
     <aside class="attention-column">
       <div class="card attention-card">
         <div class="section-kicker">Attention</div>
@@ -163,14 +169,26 @@
         </div>
       </div>
 
-      <div class="card pollen-card" id="pollenCard">
-        <div class="section-kicker">Pollen</div>
+      <div class="card pollen-card air-quality-card" id="airQualityCard">
+        <div class="section-kicker">Air &amp; Allergens</div>
         <div class="pollen-main">
-          <strong id="pollenLevel">Checking</strong>
-          <span id="pollenSource">Open-Meteo</span>
+          <strong class="aq-status" id="airQualityLevel">Checking</strong>
+          <span id="airQualityValue">AQI --</span>
         </div>
-        <div class="pollen-detail" id="pollenDetail">Looking for local pollen readings...</div>
-        <div class="pollen-types" id="pollenTypes"></div>
+        <div class="pollen-detail" id="airQualityDetail">Loading current air quality and forecast...</div>
+        <div class="allergen-section" id="pollenCard">
+          <div class="allergen-heading">
+            <span>Pollen</span>
+            <strong class="pollen-status" id="pollenLevel">Checking</strong>
+            <span class="allergen-source" id="pollenSource" translate="no">Google Maps</span>
+          </div>
+          <div class="pollen-detail" id="pollenDetail">Looking for local pollen readings...</div>
+          <div class="pollen-types" id="pollenTypes"></div>
+          <div class="outlook-label pollen-outlook-label">Pollen Outlook <span>Daily peak UPI</span></div>
+          <div class="pollen-forecast" id="pollenForecast" aria-label="Three-day pollen forecast"></div>
+        </div>
+        <div class="outlook-label">AQI Outlook <span>Daily maximum</span></div>
+        <div class="pollen-types" id="airQualityForecast"></div>
       </div>
 
       <div class="card almanac-card" id="almanacContainer">
@@ -195,42 +213,8 @@
         <div id="almHistory"></div>
       </div>
     </aside>
-
-    <section class="forecast-column card">
-      <div class="forecast-head">
-        <div class="section-kicker">10 Day Forecast</div>
-        <div id="rainBadge" class="rain-badge">Rain outlook loading</div>
-      </div>
-      <div id="weatherUpcoming" class="upcoming-forecast">
-        <div class="forecast-tile skeleton"></div>
-        <div class="forecast-tile skeleton"></div>
-        <div class="forecast-tile skeleton"></div>
-        <div class="forecast-tile skeleton"></div>
-        <div class="forecast-tile skeleton"></div>
-      </div>
-    </section>
-
-    <section class="insights-column card" id="aiInsightsContainer">
-      <div class="insights-head">
-        <div>
-          <div class="section-kicker">AI Insights</div>
-          <div id="aiInsightsTimestamp" class="insight-time"></div>
-        </div>
-        <div class="insight-actions">
-          <button class="btn icon-btn" id="refreshInsights" title="Refresh insights">
-            <svg class="icon" viewBox="0 0 24 24"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L7 6l5 5V7c2.76 0 5 2.24 5 5a5 5 0 1 1-8.66-3.54 1 1 0 1 0-1.41-1.42A7 7 0 1 0 19 12a6.98 6.98 0 0 0-1.35-5.65Z"/></svg>
-          </button>
-          <button class="btn icon-btn" id="fontSizeDown" title="Decrease font size">
-            <svg class="icon" viewBox="0 0 24 24"><path d="M19 13H5v-2h14v2z"/></svg>
-          </button>
-          <button class="btn icon-btn" id="fontSizeUp" title="Increase font size">
-            <svg class="icon" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-          </button>
-        </div>
-      </div>
-      <div id="aiInsights" class="ai-insights-list"></div>
-    </section>
-
+  </div>
+  <div class="dash-layout dashboard-panel" id="panel-interesting" role="tabpanel" aria-labelledby="tab-interesting" tabindex="0" hidden>
     <section class="us-activity-column card">
       <div class="forecast-head">
         <div class="section-kicker">Interesting Weather Activity in the US</div>
@@ -238,10 +222,16 @@
       </div>
       <div class="us-activity-layout">
         <div class="us-map-wrap">
-          <svg id="usActivityMap" class="us-activity-map" viewBox="-58 13 1016 594" role="img" aria-label="US weather activity map">
+          <svg id="usActivityMap" class="us-activity-map" viewBox="-58 13 1016 594" role="img" aria-label="US weather activity, temperatures and infrared satellite cloud map">
+            <defs><clipPath id="usCloudClip"></clipPath></defs>
             <g id="usMapStates"></g>
+            <image id="usCloudImage" clip-path="url(#usCloudClip)" preserveAspectRatio="none" hidden/>
+            <g id="usCloudBorders" class="us-cloud-borders" aria-hidden="true"></g>
+            <g id="usMapTemperatures"></g>
             <g id="usActivityMarkers"></g>
           </svg>
+          <div class="us-cloud-caption" id="usCloudStatus" role="status">Loading NOAA cloud imagery...</div>
+          <div id="usTemperatureStatus" class="us-temperature-status" role="status">Loading temperatures...</div>
           <div class="us-map-legend" aria-label="Weather activity marker legend">
             <span><i class="extreme"></i>Extreme</span>
             <span><i class="severe"></i>Warning</span>
@@ -255,14 +245,91 @@
       </div>
     </section>
   </div>
+  <div class="dash-layout dashboard-panel" id="panel-ai" role="tabpanel" aria-labelledby="tab-ai" tabindex="0" hidden>
+    <section class="insights-column card" id="aiInsightsContainer">
+      <div class="insights-head">
+        <div>
+          <div class="section-kicker">AI Insights</div>
+          <div id="aiInsightsTimestamp" class="insight-time"></div>
+        </div>
+        <div class="insight-actions">
+          <button class="btn icon-btn" id="refreshInsights" title="Refresh insights">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M17.65 6.36A7.95 7.95 0 0 0 12 4V1L7 6l5 5V7c2.76 0 5 2.24 5 5a5 5 0 1 1-8.66-3.54 1 1 0 1 0-1.41-1.42A7 7 0 1 0 19 12a6.98 6.98 0 0 0-1.35-5.65Z"/></svg>
+          </button>
+          <button class="btn icon-btn" id="fontSizeDown" title="Decrease font size">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M19 13H5v-2h14v2z"/></svg>
+          </button>
+          <button class="btn icon-btn" id="fontSizeUp" title="Increase font size">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+          </button>
+        </div>
+      </div>
+      <div id="aiInsights" class="ai-insights-list"></div>
+    </section>
+    <section class="ask-column card" id="weatherAskPanel" aria-labelledby="weatherAskTitle">
+      <div class="ask-heading">
+        <div>
+          <div class="section-kicker">Your weather, explained</div>
+          <h2 id="weatherAskTitle">Ask the weather</h2>
+        </div>
+        <svg class="ask-orbit" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="14"/><path d="M20 7v26M7 20h26"/><circle cx="20" cy="20" r="5"/></svg>
+      </div>
+      <p class="ask-description">Plan the day with an answer grounded in your local forecast.</p>
+      <div class="ask-suggestions" aria-label="Suggested weather questions">
+        <button type="button" data-weather-question="Will I need an umbrella tomorrow?">Umbrella tomorrow?</button>
+        <button type="button" data-weather-question="When is the coolest time for a walk in the next 24 hours?">Best time for a walk?</button>
+        <button type="button" data-weather-question="How does tomorrow compare with today?">Today vs. tomorrow</button>
+      </div>
+      <form id="weatherAskForm">
+        <label class="sr-only" for="weatherQuestion">Your weather question</label>
+        <div class="ask-composer">
+          <textarea id="weatherQuestion" name="question" rows="2" maxlength="500" required placeholder="What would you like to know?" aria-describedby="weatherAskContext weatherAskStatus"></textarea>
+          <button type="submit" class="ask-submit" id="weatherAskSubmit" aria-label="Ask weather question"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7M12 5v15"/></svg></button>
+        </div>
+        <div class="ask-meta"><span id="weatherAskContext">Las Vegas · default location · °F</span><span>Up to 7 days</span></div>
+      </form>
+      <p id="weatherAskStatus" class="ask-status" role="status" aria-live="polite">AI answers can make mistakes. Check official alerts for safety decisions.</p>
+      <div id="weatherAskResult" class="ask-result" hidden>
+        <div class="section-kicker">Forecast answer</div>
+        <div id="weatherAskAnswer" class="ask-answer"></div>
+        <div id="weatherAskSources" class="ask-sources"></div>
+      </div>
+    </section>
+  </div>
+
 </main>
 
-<div class="location-modal" id="locationModal" hidden>
-  <div class="location-modal-panel">
+<footer class="app-header app-footer" aria-label="Dashboard controls">
+  <h1>
+    <span class="app-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M12 3 3.5 10.2a1 1 0 0 0-.35.76V20a1 1 0 0 0 1 1H10v-5.4a2 2 0 0 1 4 0V21h5.85a1 1 0 0 0 1-1v-9.04a1 1 0 0 0-.35-.76L12 3Z"/></svg>
+    </span>
+    <span class="app-title-full">House Weather</span><span class="app-title-short">House</span> <span class="chip" id="count">0</span><span class="chip freshness-chip" id="readingsFreshness"><span class="live-dot" aria-hidden="true"></span>Loading</span><span class="chip alert-chip" id="alertCount" style="display:none;">Attention 0</span></h1>
+  <div class="controls" id="toolbar">
+    <div class="unit-toggle">
+      <button id="unitF" class="btn" title="Switch to Fahrenheit" aria-label="Switch to Fahrenheit" hidden>F</button>
+      <button id="unitC" class="btn" title="Switch to Celsius" aria-label="Switch to Celsius">C</button>
+    </div>
+
+    <div class="theme-toggle">
+      <button class="btn theme-btn" id="themeDark" title="Dark mode" aria-label="Dark mode">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+      </button>
+      <button class="btn theme-btn" id="themeLight" title="Light mode" aria-label="Light mode">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 6a6 6 0 1 0 0 12A6 6 0 0 0 12 6Zm5.24 13.76 1.41 1.41 1.41-1.41-1.41-1.41-1.41 1.41ZM4.84 17.24 3.42 18.66l1.41 1.41 1.42-1.41-1.41-1.41Z"/></svg>
+      </button>
+    </div>
+
+    <button class="btn icon-btn" id="exportBtn" title="Export CSV"><svg class="icon" viewBox="0 0 24 24"><path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z"/></svg><span>Export CSV</span></button>
+  </div>
+</footer>
+
+<div class="location-modal" id="locationModal" role="dialog" aria-modal="true" aria-labelledby="locationModalTitle" hidden>
+  <div class="location-modal-panel" tabindex="-1">
     <div class="location-modal-head">
       <div>
         <div class="section-kicker">Locations</div>
-        <h2>Choose cities</h2>
+        <h2 id="locationModalTitle">Choose cities</h2>
       </div>
       <button class="btn icon-btn" id="closeLocationManager" title="Close locations">
         <svg class="icon" viewBox="0 0 24 24"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4-6.3-6.3-6.3 6.3-1.4-1.4L9.2 12 2.9 5.7l1.4-1.4 6.3 6.3 6.3-6.3 1.4 1.4Z"/></svg>
@@ -292,6 +359,9 @@
   </defs>
 </svg>
 
-<script src="app.js?v=4.1" defer></script>
+<script src="assets/d3-array.min.js" defer></script>
+<script src="assets/d3-geo.min.js" defer></script>
+<script src="assets/desktop-overview.js?v=6.36" defer></script>
+<script src="app.js?v=6.36" defer></script>
 </body>
 </html>

@@ -3,7 +3,7 @@ r"""
 Local server with history logging, sparklines, and Optimized Open-Meteo Almanac.
 """
 
-import os, csv, json, time, sys, threading
+import os, csv, json, time, sys, threading, uuid
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any
 from collections import deque
@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, jsonify, send_from_directory, send_file, Response, request, abort
 import requests
 import anthropic
+import openrouter_ai
 
 try:
     from dotenv import load_dotenv
@@ -32,6 +33,9 @@ INSIGHTS_CACHE_HOURS = 24  # Cache for 24 hours so insights refresh daily
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 READINGS_REFRESH_SECONDS = 45
 READINGS_STALE_SECONDS = 300
+DEVICE_CACHE_SECONDS = int(os.environ.get("GOVEE_DEVICE_CACHE_SECONDS", "1800"))
+POLLEN_CACHE_SECONDS = int(os.environ.get("POLLEN_CACHE_SECONDS", "17280"))
+POLLEN_DAILY_REQUEST_LIMIT = 5
 LOG_RETENTION_DAYS = int(os.environ.get("LOG_RETENTION_DAYS", "30"))
 LOG_TRIM_INTERVAL_SECONDS = 24 * 3600
 # 24h of history at one row per refresh interval, with headroom
@@ -47,11 +51,21 @@ _log_lock = threading.Lock()
 _history_lock = threading.Lock()
 _history_cache: Dict[str, deque] = {}
 _last_trim_time = 0.0
+_device_cache: List[Dict[str, Any]] = []
+_device_cache_time = 0.0
+_device_cache_lock = threading.Lock()
+_pollen_cache: Dict[str, Dict[str, Any]] = {}
+_pollen_request_times = deque()
+_pollen_client_requests: Dict[str, deque] = {}
+_pollen_lock = threading.Lock()
 
 # ---------------------------------------------------------------------
 # FLASK APP
 # ---------------------------------------------------------------------
 app = Flask(__name__, static_folder=None)
+
+from weather_questions import register_weather_questions
+register_weather_questions(app, ANTHROPIC_MODEL)
 
 # Only these files are served from the project root. The previous catch-all
 # route exposed .env, the readings CSV, and server source to anyone on the
@@ -59,8 +73,20 @@ app = Flask(__name__, static_folder=None)
 STATIC_FILES = {
     "index.html", "app.js", "style.css", "service-worker.js", "manifest.json",
     "favicon.ico", "favicon-16x16.png", "favicon-32x32.png",
+    "assets/dashboard-tabs.css", "assets/desktop-overview.css", "assets/desktop-overview.js",
+    "assets/autumn-cabin.png", "assets/d3-array.min.js", "assets/d3-geo.min.js",
+    "assets/sensor-living-room.svg", "assets/sensor-office.svg", "assets/sensor-backyard.svg",
 }
 STATIC_FAVICON_EXTS = (".png", ".ico", ".webmanifest")
+
+@app.after_request
+def security_headers(response: Response) -> Response:
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "geolocation=(self)")
+    if request.path == "/" or request.path.endswith((".html", ".js", ".css", ".json")):
+        response.headers.setdefault("Content-Security-Policy", "default-src 'self'; connect-src 'self' https://api.open-meteo.com https://api.weather.gov https://air-quality-api.open-meteo.com https://pollen.googleapis.com https://api.bigdatacloud.net https://cdn.jsdelivr.net https://nowcoast.noaa.gov; img-src 'self' data: https://nowcoast.noaa.gov; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'")
+    return response
 
 @app.route("/")
 def serve_index() -> Response:
@@ -87,6 +113,136 @@ def log(msg):
     sys.stdout.flush()
 
 # ---------------------------------------------------------------------
+# GOOGLE POLLEN
+# ---------------------------------------------------------------------
+def _pollen_location_key(latitude: float, longitude: float) -> str:
+    # About 1 km, matching the API's advertised forecast resolution.
+    return f"{latitude:.2f},{longitude:.2f}"
+
+def _normalize_pollen(payload):
+    days = []
+    for day in payload.get("dailyInfo") or []:
+        date = day.get("date") or {}
+        date_text = ""
+        if all(date.get(part) for part in ("year", "month", "day")):
+            date_text = f"{date['year']:04d}-{date['month']:02d}-{date['day']:02d}"
+
+        pollen_types = []
+        for item in day.get("pollenTypeInfo") or []:
+            index = item.get("indexInfo") or {}
+            pollen_types.append({
+                "code": item.get("code"),
+                "name": item.get("displayName") or (item.get("code") or "").title(),
+                "in_season": bool(item.get("inSeason")),
+                "value": index.get("value"),
+                "category": index.get("category"),
+                "description": index.get("indexDescription"),
+                "health_recommendations": item.get("healthRecommendations") or [],
+            })
+
+        plants = []
+        for item in day.get("plantInfo") or []:
+            index = item.get("indexInfo") or {}
+            if index.get("value") is not None:
+                plants.append({
+                    "code": item.get("code"),
+                    "name": item.get("displayName") or (item.get("code") or "").replace("_", " ").title(),
+                    "in_season": bool(item.get("inSeason")),
+                    "value": index.get("value"),
+                    "category": index.get("category"),
+                })
+        plants.sort(key=lambda item: item["value"], reverse=True)
+        days.append({"date": date_text, "types": pollen_types, "plants": plants[:5]})
+
+    return {
+        "source": "Google Maps",
+        "attribution": "Source: Includes pollen data from Google",
+        "region_code": payload.get("regionCode"),
+        "days": days,
+    }
+
+def _check_pollen_client_rate_limit(client_id: str, now_ts: float) -> bool:
+    window_start = now_ts - 60
+    requests_for_client = _pollen_client_requests.setdefault(client_id, deque())
+    while requests_for_client and requests_for_client[0] <= window_start:
+        requests_for_client.popleft()
+    if len(requests_for_client) >= 30:
+        return False
+    requests_for_client.append(now_ts)
+    return True
+
+@app.get("/api/pollen")
+def api_pollen():
+    api_key = os.environ.get("GOOGLE_POLLEN_API_KEY")
+    if not api_key:
+        return jsonify({"error": "Google Pollen API is not configured."}), 503
+
+    try:
+        latitude = float(request.args["lat"])
+        longitude = float(request.args["lon"])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"error": "Valid lat and lon parameters are required."}), 400
+    if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+        return jsonify({"error": "Coordinates are outside the valid range."}), 400
+
+    now_ts = time.time()
+    client_id = request.remote_addr or "unknown"
+    location_key = _pollen_location_key(latitude, longitude)
+    with _pollen_lock:
+        if not _check_pollen_client_rate_limit(client_id, now_ts):
+            return jsonify({"error": "Too many pollen requests. Try again shortly."}), 429
+
+        cached = _pollen_cache.get(location_key)
+        if cached and now_ts - cached["timestamp"] < POLLEN_CACHE_SECONDS:
+            response = jsonify({**cached["payload"], "cached": True})
+            response.headers["Cache-Control"] = "private, no-store"
+            return response
+
+        cutoff = now_ts - 86400
+        while _pollen_request_times and _pollen_request_times[0] <= cutoff:
+            _pollen_request_times.popleft()
+        if len(_pollen_request_times) >= POLLEN_DAILY_REQUEST_LIMIT:
+            return jsonify({"error": "Daily Google Pollen API request limit reached."}), 429
+
+        try:
+            upstream = requests.get(
+                "https://pollen.googleapis.com/v1/forecast:lookup",
+                params={
+                    "key": api_key,
+                    "location.latitude": round(latitude, 4),
+                    "location.longitude": round(longitude, 4),
+                    "days": 3,
+                    "languageCode": "en",
+                    "plantsDescription": "false",
+                },
+                timeout=15,
+            )
+            upstream.raise_for_status()
+            payload = _normalize_pollen(upstream.json())
+            if not payload["days"]:
+                return jsonify({"error": "No pollen forecast is available for this location."}), 404
+        except requests.RequestException as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            log(f"Google Pollen API request failed (status={status or 'network error'})")
+            if cached:
+                response = jsonify({**cached["payload"], "cached": True, "stale": True})
+                response.headers["Cache-Control"] = "private, no-store"
+                return response
+            return jsonify({"error": "Pollen forecast is temporarily unavailable."}), 502
+        except (TypeError, ValueError, KeyError) as exc:
+            log(f"Google Pollen API response was invalid: {exc}")
+            return jsonify({"error": "Pollen forecast response was invalid."}), 502
+
+        _pollen_request_times.append(now_ts)
+        if location_key not in _pollen_cache and len(_pollen_cache) >= 8:
+            oldest_key = min(_pollen_cache, key=lambda key: _pollen_cache[key]["timestamp"])
+            del _pollen_cache[oldest_key]
+        _pollen_cache[location_key] = {"timestamp": now_ts, "payload": payload}
+        response = jsonify({**payload, "cached": False})
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
+
+# ---------------------------------------------------------------------
 # GOVEE HELPERS
 # ---------------------------------------------------------------------
 def get_headers() -> Dict[str, str]:
@@ -96,24 +252,49 @@ def get_headers() -> Dict[str, str]:
         return {}
     return {"Content-Type": "application/json", "Govee-API-Key": api_key}
 
-def fetch_devices() -> List[Dict[str, Any]]:
+def fetch_devices(force=False) -> List[Dict[str, Any]]:
+    global _device_cache, _device_cache_time
+    now_ts = time.time()
+    with _device_cache_lock:
+        if not force and _device_cache and now_ts - _device_cache_time < DEVICE_CACHE_SECONDS:
+            return list(_device_cache)
     try:
         r = requests.get(f"{BASE_URL}/user/devices", headers=get_headers(), timeout=30)
         r.raise_for_status()
-        return r.json().get("data", [])
+        devices = r.json().get("data", [])
+        if not isinstance(devices, list):
+            raise ValueError("Govee device response did not contain a device list")
+        with _device_cache_lock:
+            _device_cache = devices
+            _device_cache_time = time.time()
+        return list(devices)
     except Exception as e:
         log(f"Error fetching devices: {e}")
-        return []
+        with _device_cache_lock:
+            if _device_cache:
+                log("Using stale cached Govee device inventory")
+                return list(_device_cache)
+        raise
 
 def get_state(sku: str, device: str) -> Dict[str, Any]:
-    payload = {"requestId": "local-dashboard", "payload": {"sku": sku, "device": device}}
-    try:
-        r = requests.post(f"{BASE_URL}/device/state", headers=get_headers(), json=payload, timeout=30)
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        log(f"Error getting state for {device}: {e}")
-        return {}
+    last_error = None
+    for attempt in range(2):
+        payload = {"requestId": str(uuid.uuid4()), "payload": {"sku": sku, "device": device}}
+        try:
+            r = requests.post(f"{BASE_URL}/device/state", headers=get_headers(), json=payload, timeout=20)
+            if r.status_code == 429 or 500 <= r.status_code < 600:
+                retry_after = r.headers.get("Retry-After")
+                delay = min(5.0, float(retry_after)) if retry_after else 1.5 * (attempt + 1)
+                if attempt == 0:
+                    time.sleep(delay)
+                    continue
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            last_error = e
+            if attempt == 0:
+                time.sleep(1.0)
+    raise RuntimeError(f"Govee state request failed for {device}: {last_error}")
 
 # ---------------------------------------------------------------------
 # NORMALIZATION
@@ -523,7 +704,8 @@ def api_status():
             "last_live_age_seconds": round(live_age, 1) if live_age is not None else None,
             "refreshing": refreshing,
             "last_error": last_error,
-            "refresh_interval_seconds": READINGS_REFRESH_SECONDS
+            "refresh_interval_seconds": READINGS_REFRESH_SECONDS,
+            "device_cache_seconds": DEVICE_CACHE_SECONDS
         },
         "history": {
             "devices": len(_history_cache),
@@ -532,6 +714,8 @@ def api_status():
         },
         "ai": {
             "anthropic_model": ANTHROPIC_MODEL,
+            "provider": "openrouter" if openrouter_ai.enabled() else "anthropic",
+            "model": openrouter_ai.model() if openrouter_ai.enabled() else ANTHROPIC_MODEL,
             "insights_cached": insights_cached,
             "insights_timestamp": insights_timestamp
         }
@@ -694,9 +878,9 @@ def api_almanac_insights():
             log(f"Insights cache read error: {e}")
 
     # 2. Check for API Key
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = openrouter_ai.api_key() if openrouter_ai.enabled() else os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        return jsonify({"error": "ANTHROPIC_API_KEY not set"}), 500
+        return jsonify({"error": "AI provider API key is not configured"}), 503
 
     log("Generating fresh AI insights...")
 
@@ -744,13 +928,12 @@ def api_almanac_insights():
         if is_outdoor:
             continue
 
+        temp_f = s.get("temp_f")
         temp_c = s.get("temp_c")
-        if temp_c is not None:
-            # Fix glitch: if temp_c is in range 40-120, it's actually Fahrenheit
-            if 40 < temp_c < 120:
-                indoor_temps_f.append(temp_c)  # Already in Fahrenheit
-            else:
-                indoor_temps_f.append((temp_c * 9/5) + 32)  # Convert to Fahrenheit
+        if temp_f is not None:
+            indoor_temps_f.append(temp_f)
+        elif temp_c is not None:
+            indoor_temps_f.append((temp_c * 9/5) + 32)
 
         humidity = s.get("humidity")
         if humidity is not None:
@@ -794,16 +977,13 @@ Return ONLY a JSON array of strings, like:
 
     # 5. Call Claude API
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        message = client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=500,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
-
-        response_text = message.content[0].text
+        if openrouter_ai.enabled():
+            response_text = openrouter_ai.complete("Analyze only the supplied environmental data. Return the requested JSON array, no other text.", prompt, 500)
+        else:
+            with anthropic.Anthropic(api_key=api_key, timeout=30, max_retries=0) as client:
+                message = client.messages.create(model=ANTHROPIC_MODEL, max_tokens=500,
+                    messages=[{"role": "user", "content": prompt}])
+            response_text = message.content[0].text
 
         insights = parse_insights_response(response_text)
 
@@ -811,7 +991,7 @@ Return ONLY a JSON array of strings, like:
         log(f"JSON parse error: {e}")
         insights = ["Unable to generate insights at this time."]
     except Exception as e:
-        log(f"Claude API error: {e}")
+        log(f"AI provider failure: {type(e).__name__}")
         # Fall back to the last cached insights rather than showing nothing
         if cache.get("insights"):
             return jsonify({
@@ -820,7 +1000,7 @@ Return ONLY a JSON array of strings, like:
                 "stale": True,
                 "timestamp": cache.get("timestamp")
             })
-        return jsonify({"error": f"AI generation failed: {str(e)}"}), 500
+        return jsonify({"error": str(e) if isinstance(e, openrouter_ai.AIError) else "AI generation failed. Check provider configuration."}), 503
 
     # 6. Cache the results
     try:
