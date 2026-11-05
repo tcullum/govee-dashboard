@@ -4,9 +4,37 @@ A local-first dashboard for Govee temperature/humidity sensors with live indoor 
 
 The app is built as a small Flask server plus a static browser UI. It is designed to run well in Docker on a home server, NAS, or desktop.
 
+## Latest release — v2026.11.04
+
+[Download the latest release](https://github.com/tcullum/govee-dashboard/releases/tag/v2026.11.04) · [Release history](https://github.com/tcullum/govee-dashboard/releases)
+
+The November 4, 2026 release improves security, sensor reliability, and efficiency:
+
+- Google sign-in through Cloudflare Access, with signed-token validation at the origin.
+- Updated, locked dependencies and a non-root container with read-only application files.
+- Shared background sensor polling, bounded AI generation, and persistent pollen/insight request budgets.
+- Last valid readings survive upstream failures; freshness indicators continue aging when connectivity stops.
+- Location-aware almanac and insights, correct local calendar dates, and a true 24-hour history window.
+- Working offline static assets, including the overview interface and versioned scripts.
+
+**Validation:** 81 tests passed (47 backend and 34 browser); the rebuilt environment's 38 Python packages returned zero OSV advisory findings at release validation.
+
+See the [resolution record](docs/dashboard-resolution-2026-11-04.md) for the full changes and verification.
+
+### Upgrading from v2026.10.31
+
+This release changes the supplied production deployment:
+
+1. Pull the latest source and set `CLOUDFLARE_ACCESS_TEAM` and `CLOUDFLARE_ACCESS_AUD` in `.env`.
+2. Configure the weather Access application with Google sign-in and an explicit account allow policy. The application must require authentication for all paths.
+3. Stop the old container before migrating data. Installations that stored runtime files in the project directory must copy `govee_readings.csv` and desired caches into the `govee_dashboard_data` volume at `/data`. Keep the originals as a backup and give copied files to UID/GID `10001:10001`. Preserve any existing populated volume.
+4. Rebuild and start with `docker compose up -d --build`, then open the Cloudflare-protected hostname.
+
+The published port now listens only on `127.0.0.1`. Direct API requests without a valid Access assertion return 401. The existing host cloudflared tunnel can still reach it. `/healthz` remains available for health checks. Future upgrades retain history and request budgets in the data volume.
+
 ## Screenshots
 
-Current dashboard captured October 31, 2026.
+Interface screenshots captured October 31, 2026. The November 4 release preserves this layout while improving security and reliability.
 
 ![Desktop dashboard in dark mode](docs/screenshot-desktop.png)
 
@@ -30,17 +58,19 @@ Current dashboard captured October 31, 2026.
 - Optional AI insights and weather questions with OpenRouter or Anthropic Claude
 - Desktop overview, tabbed detail views, and a live weather house scene
 - Dark/light modes, compact mode, and mobile-friendly layout
-- Docker Compose support
+- Docker Compose support with isolated persistent storage
+- Cloudflare Access protection for the supplied production deployment
 
 ## Requirements
 
 - A Govee account with devices supported by the Govee Developer API
 - A Govee API key
 - Docker and Docker Compose, recommended
+- For the supplied production Compose deployment: a Cloudflare Tunnel and an Access application with your Google identity provider configured
 
 Optional:
 
-- Anthropic API key for AI Insights
+- OpenRouter or Anthropic API credentials for AI features (the supplied Compose deployment uses OpenRouter)
 - Google Maps Platform API key for pollen forecasts
 
 ## Quick Start With Docker
@@ -71,7 +101,7 @@ GOOGLE_POLLEN_API_KEY=
 POLLEN_CACHE_SECONDS=17280
 ```
 
-`GOVEE_API_KEY` is required for sensor readings. `ANTHROPIC_API_KEY` is optional; leave it blank if you do not want AI insights.
+`GOVEE_API_KEY` is required for sensor readings. The supplied Compose deployment uses OpenRouter; configure its secret file as described below, or adjust the Compose AI provider/secret settings for your installation. A direct Anthropic key is used only with the Anthropic provider. Configure the Cloudflare Access values before starting the supplied production deployment.
 
 4. Start the dashboard:
 
