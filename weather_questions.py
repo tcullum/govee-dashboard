@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import anthropic
 import openrouter_ai
 import requests
+from request_security import same_origin_request
 from flask import jsonify, request
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
@@ -48,30 +49,7 @@ def register_weather_questions(app, model):
 
     @app.post("/api/weather/ask")
     def weather_ask():
-        from urllib.parse import urlsplit
-        def origin_tuple(value):
-            parsed = urlsplit(value)
-            if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
-                raise ValueError("Invalid origin")
-            return parsed.scheme, parsed.hostname.lower(), parsed.port or (443 if parsed.scheme == "https" else 80)
-        try:
-            allowed = {origin_tuple(request.host_url)}
-            # TLS may terminate at Cloudflare. Trust only an operator-configured
-            # external origin, never arbitrary client Forwarded/X-Forwarded headers.
-            public_origin = os.environ.get("WEATHER_PUBLIC_ORIGIN", "").strip()
-            if public_origin:
-                parsed_public = urlsplit(public_origin)
-                if (parsed_public.scheme != "https" or parsed_public.path not in ("", "/")
-                        or parsed_public.query or parsed_public.fragment):
-                    raise ValueError("Invalid configured public origin")
-                allowed.add(origin_tuple(public_origin))
-            origin = request.headers.get("Origin")
-            referer = request.headers.get("Referer")
-            if (request.headers.get("Sec-Fetch-Site") in ("cross-site", "same-site")
-                    or (origin is not None and (origin_tuple(origin) not in allowed or urlsplit(origin).path not in ("", "/")))
-                    or (origin is None and referer is not None and origin_tuple(referer) not in allowed)):
-                return _reply({"error": "Weather questions must be sent from this dashboard's origin."}, 403)
-        except ValueError:
+        if not same_origin_request():
             return _reply({"error": "Weather questions must be sent from this dashboard's origin."}, 403)
         if request.content_length is not None and request.content_length > 8192:
             return _reply({"error": "Request is too large (maximum 8192 bytes)."}, 413)

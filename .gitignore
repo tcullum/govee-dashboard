@@ -34,3 +34,5 @@ insights_cache.json
 almanac_cache.json
 govee_readings.csv
 *.log
+data/
+*_budget.json

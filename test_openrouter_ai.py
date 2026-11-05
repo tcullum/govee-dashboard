@@ -63,17 +63,20 @@ class OpenRouterTests(unittest.TestCase):
 
     def test_insights_use_openrouter_and_cache_fresh_output(self):
         import govee_server as server, openrouter_ai as ai
+        context = {'latitude':36.17,'longitude':-115.14,'timezone':'America/Los_Angeles'}
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,{'AI_PROVIDER':'openrouter','OPENROUTER_API_KEY':'test-only-key'}), \
                 patch.object(server,'INSIGHTS_CACHE_FILE',str(Path(tmp)/'insights.json')), \
-                patch.object(server,'api_almanac') as almanac, patch.object(server,'api_readings') as readings, \
+                patch.object(server,'get_almanac',return_value={'avg_high':85,'avg_low':60,'history':[]}), \
+                patch.object(server,'_cached_readings_payload',return_value=({'items':[]},0)), \
                 patch('requests.get') as get, patch('anthropic.Anthropic',side_effect=RuntimeError('Direct Anthropic must not be used')), \
                 patch.object(ai,'complete',return_value='["Forecast insight"]') as complete:
-            almanac.return_value.get_json.return_value={'avg_high':85,'avg_low':60,'history':[]}
-            readings.return_value.get_json.return_value={'items':[]}
+            get.return_value.status_code=200
             get.return_value.json.return_value={'current':{'temperature_2m':80},'daily':{'temperature_2m_max':[90],'temperature_2m_min':[60]}}
+            server._refresh_insights(context)
             response=server.app.test_client().get('/api/almanac/insights')
             self.assertEqual(response.status_code,200,response.json)
             self.assertEqual(response.json['insights'],['Forecast insight'])
+            self.assertTrue(response.json['cached'])
             complete.assert_called_once()
             self.assertTrue((Path(tmp)/'insights.json').is_file())
 

@@ -865,25 +865,22 @@ function setFreshnessChip(text, stateClass = '') {
 
 function updateFreshness(readings) {
   if (!elements.freshness) return;
+  const fetchedAt = readings._receivedAt ?? Date.now();
+  const absolute = Date.parse(readings.last_live_at);
+  const liveAge = Number.isFinite(absolute) ? Math.max(0, (Date.now() - absolute) / 1000)
+    : isValid(readings.last_live_age_seconds) ? readings.last_live_age_seconds + Math.max(0, Date.now() - fetchedAt) / 1000 : null;
   elements.freshness.title = 'Govee refreshes automatically in the background';
-
-  const liveAge = readings.last_live_age_seconds;
-  const cacheAge = readings.age_seconds;
-  const isLog = readings.source === 'log';
-  const isRefreshing = readings.refreshing;
-
-  if (isLog) {
-    setFreshnessChip(isRefreshing ? 'Last logged · refreshing' : 'Last logged', 'stale');
-    return;
+  if (readings._fetchError || readings.last_error) {
+    elements.freshness.title = readings._fetchError || `Govee update failed: ${readings.last_error}`;
+    setFreshnessChip('Update failed · last readings', 'stale');
+  } else if (readings.source === 'log') {
+    setFreshnessChip(readings.refreshing ? 'Last logged · refreshing' : 'Last logged', 'stale');
+  } else if (isValid(liveAge)) {
+    setFreshnessChip(`${liveAge > 180 ? 'Last update ' : readings.refreshing ? 'Refreshing · ' : 'Live '}${formatAge(liveAge)}`,
+      liveAge > 180 ? 'stale' : (readings.refreshing ? 'refreshing' : ''));
+  } else {
+    setFreshnessChip(readings.refreshing ? 'Refreshing' : 'Waiting', 'refreshing');
   }
-
-  if (isValid(liveAge)) {
-    const stateClass = liveAge > 180 ? 'stale' : ((isRefreshing || cacheAge > 45) ? 'refreshing' : '');
-    setFreshnessChip(`${isRefreshing ? 'Refreshing · ' : 'Live '}${formatAge(liveAge)}`, stateClass);
-    return;
-  }
-
-  setFreshnessChip(isRefreshing ? 'Refreshing' : 'Waiting', 'refreshing');
 }
 
 function escapeHtml(value) {
@@ -2133,6 +2130,15 @@ function getTimeAgo(timestamp) {
   return `Updated ${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
 }
 
+function weatherContextParams() {
+  const weather = _lastWeather;
+  return new URLSearchParams({lat: weather?.lat ?? homeLocation.latitude,
+    lon: weather?.lon ?? homeLocation.longitude,
+    timezone: weather?.data?.timezone || homeLocation.timezone});
+}
+
+let insightsRetryTimer = null;
+
 async function loadAlmanacInsights(forceRefresh = false) {
   const container = document.getElementById('aiInsights');
   const timestampEl = document.getElementById('aiInsightsTimestamp');
@@ -2154,8 +2160,8 @@ async function loadAlmanacInsights(forceRefresh = false) {
   window.scrollTo(0, scrollY);
 
   try {
-    const url = forceRefresh ? '/api/almanac/insights?refresh=1' : '/api/almanac/insights';
-    const res = await fetch(url, {signal:AbortSignal.timeout(20000)});
+    const url = `/api/almanac/insights?${weatherContextParams()}`;
+    const res = await fetch(url, {method:forceRefresh ? 'POST' : 'GET', signal:AbortSignal.timeout(20000)});
     if (!res.ok) {
       setTabAttention("ai", "Insights unavailable");
       container.innerHTML = '<div style="font-size:12px; color:var(--muted); font-style:italic;">Insights unavailable</div>';
@@ -2166,6 +2172,18 @@ async function loadAlmanacInsights(forceRefresh = false) {
 
     const data = await res.json();
     const insights = data.insights || [];
+    clearTimeout(insightsRetryTimer);
+    if (data.refreshing) {
+      if (timestampEl) timestampEl.textContent = 'Preparing fresh insights…';
+      insightsRetryTimer = setTimeout(() => {
+        if (!document.hidden) loadAlmanacInsights();
+      }, 5000);
+    }
+    if (!insights.length && (data.refreshing || data.last_error)) {
+      container.textContent = data.refreshing ? 'Preparing fresh insights…' : data.last_error;
+      container.style.minHeight = '';
+      return;
+    }
     const isStale = data.stale || (data.timestamp && Date.now() - new Date(data.timestamp).getTime() > 86400000);
     setTabAttention('ai', isStale ? 'Insights are out of date' : (insights.length ? 'New AI insights' : ''), [!!isStale, insights]);
 
@@ -2387,8 +2405,12 @@ async function loadAlmanac(weatherData) {
   try {
     const controller = new AbortController();
     const abortTimer = setTimeout(() => controller.abort(), 20000);
-    const res = await fetch('/api/almanac', { signal: controller.signal });
+    const res = await fetch(`/api/almanac?${weatherContextParams()}`, { signal: controller.signal });
     clearTimeout(abortTimer);
+    if (res.status === 202) {
+      setTimeout(() => { if (!document.hidden) loadAlmanac(weatherData); }, 2000);
+      return;
+    }
 
     if (!res.ok) {
       throw new Error(`API returned ${res.status}`);
@@ -2396,13 +2418,16 @@ async function loadAlmanac(weatherData) {
 
     const hist = await res.json();
 
-    if (hist.error || !hist.avg_high || !hist.avg_low) {
+    if (hist.error || hist.stale || !isValid(hist.avg_high) || !isValid(hist.avg_low)) {
       throw new Error('Invalid almanac data');
     }
 
     if(elHigh) elHigh.textContent = Math.round(hist.avg_high);
     if(elLow) elLow.textContent = Math.round(hist.avg_low);
 
+    if (hist.latitude != null && (Math.abs(hist.latitude - _lastWeather.lat) > 0.01 || Math.abs(hist.longitude - _lastWeather.lon) > 0.01)) {
+      throw new Error('Historical weather location does not match the forecast');
+    }
     const todayHigh = weatherData.daily.temperature_2m_max[0];
     const diff = todayHigh - hist.avg_high;
 
@@ -2532,23 +2557,29 @@ async function loadData({ forceHistory = false, showSpinner = false } = {}) {
     if (showSpinner && refreshIcon) refreshIcon.classList.add('spin');
 
     const shouldFetchHistory = forceHistory || !_lastHistoryLoadedAt || Date.now() - _lastHistoryLoadedAt >= HISTORY_REFRESH_MS;
-    const [rRead, rHist] = await Promise.all([
+    const [readResult, historyResult] = await Promise.allSettled([
       fetch('/api/readings', {signal:AbortSignal.timeout(20000)}),
       shouldFetchHistory ? fetch('/api/history', {signal:AbortSignal.timeout(20000)}) : Promise.resolve(null)
     ]);
 
-    // Check if API calls succeeded
+    if (readResult.status === 'rejected') throw readResult.reason;
+    const rRead = readResult.value;
+    const rHist = historyResult.status === 'fulfilled' ? historyResult.value : null;
+    // History failures must not discard valid fresh readings.
     if (!rRead.ok) {
       throw new Error(`Readings API failed: ${rRead.status}`);
     }
 
     const readings = await rRead.json();
+    readings._receivedAt = Date.now();
     let historyChanged = false;
     if (rHist?.ok) {
-      const history = await rHist.json();
-      _lastHistory = history.series || {};
-      _lastHistoryLoadedAt = Date.now();
-      historyChanged = true;
+      try {
+        const history = await rHist.json();
+        _lastHistory = history.series || {};
+        _lastHistoryLoadedAt = Date.now();
+        historyChanged = true;
+      } catch (error) { console.warn('History unavailable; keeping previous graph', error); }
     }
 
     // Only render if we have data - prevents panels from disappearing on empty response
@@ -2571,6 +2602,10 @@ async function loadData({ forceHistory = false, showSpinner = false } = {}) {
   } catch (e) {
     console.error("loadData error:", e);
     elements.notice.textContent = `⚠ API Error: ${e.message}`;
+    if (_lastReadings) {
+      _lastReadings._fetchError = 'Dashboard connection failed; displaying last readings';
+      updateFreshness(_lastReadings);
+    }
   } finally {
     _dataLoadInFlight = false;
     if (refreshIcon) refreshIcon.classList.remove('spin');
@@ -2730,11 +2765,11 @@ function renderSunUv(data, date = new Date()) {
   const value = index >= 0 ? data.hourly?.uv_index?.[index] : null;
   const valid = typeof value === 'number' && Number.isFinite(value) && value >= 0;
   const root = document.getElementById('sunUv');
-  document.getElementById('sunUvValue').textContent = valid ? value.toFixed(1) : '�';
+  document.getElementById('sunUvValue').textContent = valid ? value.toFixed(1) : '—';
   document.getElementById('sunUvLevel').textContent = valid ? uvLabel(value) : 'Unavailable';
   root.setAttribute('aria-label', valid ? `UV index ${value.toFixed(1)}, ${uvLabel(value)}. Hourly forecast for ${hour.replace('T', ' ')}:00` : 'UV index unavailable');
   requestAnimationFrame(drawSunConnection);
-  root.title = valid ? `Open-Meteo hourly UV forecast � ${hour.replace('T', ' ')}:00${data.timezone ? ` � ${data.timezone}` : ''}` : 'Hourly UV forecast unavailable';
+  root.title = valid ? `Open-Meteo hourly UV forecast · ${hour.replace('T', ' ')}:00${data.timezone ? ` · ${data.timezone}` : ''}` : 'Hourly UV forecast unavailable';
 }
 
 function renderWeather() {
@@ -2854,8 +2889,19 @@ function renderWeather() {
   }
 }
 
+let homeLocation = {latitude:36.17, longitude:-115.14, name:'Las Vegas', timezone:'America/Los_Angeles'};
+async function loadHomeLocation() {
+  try {
+    const response = await fetch('/api/config', {signal:AbortSignal.timeout(5000)});
+    if (response.ok) {
+      const config = await response.json();
+      if (Number.isFinite(config.latitude) && Number.isFinite(config.longitude) && typeof config.timezone === 'string') homeLocation = config;
+    }
+  } catch (error) { console.warn('Home configuration unavailable', error); }
+}
+
 async function loadWeather() {
-  let lat = 36.17, lon = -115.14, locName = "Las Vegas";
+  let lat = homeLocation.latitude, lon = homeLocation.longitude, locName = homeLocation.name;
   let usedFallback = true;
 
   if (location.protocol === 'https:' || location.hostname === 'localhost') {
@@ -2863,7 +2909,7 @@ async function loadWeather() {
       const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, {timeout:5000}));
       lat = pos.coords.latitude; lon = pos.coords.longitude;
       usedFallback = false;
-      const geo = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`).then(r=>r.json());
+      const geo = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`, {signal:AbortSignal.timeout(5000)}).then(r=>r.json());
       locName = geo.locality || geo.city || "Local Weather";
     } catch {}
   }
@@ -2872,7 +2918,11 @@ async function loadWeather() {
 
   try {
     const data = await fetch(url, {signal:AbortSignal.timeout(20000)}).then(r=>r.json());
+    const locationChanged = !_lastWeather || _lastWeather.lat !== lat || _lastWeather.lon !== lon;
     _lastWeather = { data, locName, usedFallback, lat, lon };
+    if (locationChanged) for (const task of dashboardRefreshTasks) {
+      if (task.key === 'local' || task.key === 'insights') task.lastAttempt = 0;
+    }
     updateWeatherAskContext();
     renderWeather();
     loadWeatherAlerts(lat, lon, locName);
@@ -3051,7 +3101,7 @@ function updateWeatherAskContext() {
   const label = document.getElementById('weatherAskContext');
   if (!label) return;
   const weather = _lastWeather;
-  label.textContent = `${weather?.locName || 'Las Vegas'}${!weather || weather.usedFallback ? ' · default location' : ''} · °${unit}`;
+  label.textContent = `${weather?.locName || homeLocation.name}${!weather || weather.usedFallback ? ' · default location' : ''} · °${unit}`;
 }
 
 function initWeatherQuestions() {
@@ -3094,8 +3144,8 @@ function initWeatherQuestions() {
     try {
       const response = await fetch('/api/weather/ask', {
         method: 'POST', headers: {'Content-Type': 'application/json'}, signal: controller.signal,
-        body: JSON.stringify({question, latitude: weather?.lat ?? 36.17, longitude: weather?.lon ?? -115.14,
-          location: weather?.locName || 'Las Vegas', unit})
+        body: JSON.stringify({question, latitude: weather?.lat ?? homeLocation.latitude, longitude: weather?.lon ?? homeLocation.longitude,
+          location: weather?.locName || homeLocation.name, unit})
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -3117,7 +3167,7 @@ function initWeatherQuestions() {
       }
       const stamp = document.createElement('span');
       const generated = new Date(data.generated_at);
-      const safeLocation = typeof data.location === 'string' && data.location.length <= 120 ? data.location : (weather?.locName || 'Las Vegas');
+      const safeLocation = typeof data.location === 'string' && data.location.length <= 120 ? data.location : (weather?.locName || homeLocation.name);
       const safeUnit = data.unit === 'C' || data.unit === 'F' ? data.unit : unit;
       stamp.textContent = `${safeLocation} · °${safeUnit}${Number.isNaN(generated.getTime()) ? '' : ' · ' + generated.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`;
       sources.append(stamp);
@@ -3192,7 +3242,7 @@ function renderActiveDashboardView() {
 // Secondary resources start on first visit and only refresh in their active view.
 const dashboardRefreshTasks = [
   {key:'readings', every:60000, load:() => loadData()},
-  {key:'weather', every:900000, load:loadWeather},
+  {key:'weather', every:900000, load:async () => { await loadHomeLocation(); return loadWeather(); }},
   {key:'local', view:'local', every:900000, load:() => {
     if (!_lastWeather?.data) return false;
     const {lat, lon, data} = _lastWeather;

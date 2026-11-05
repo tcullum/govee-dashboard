@@ -1,10 +1,11 @@
 ﻿services:
   govee:
     build: .
+    image: govee-dashboard:review-fixes
     container_name: govee-dashboard
     working_dir: /app
     ports:
-      - "${PORT:-8000}:${PORT:-8000}"
+      - "127.0.0.1:${PORT:-8000}:${PORT:-8000}"
     environment:
       GOVEE_API_KEY: ${GOVEE_API_KEY:?Set GOVEE_API_KEY in .env}
       GOOGLE_POLLEN_API_KEY: ${GOOGLE_POLLEN_API_KEY:-}
@@ -19,8 +20,25 @@
       WEATHER_PUBLIC_ORIGIN: "https://weather.cullum.dad"
       LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-30}
       GOVEE_DEVICE_CACHE_SECONDS: ${GOVEE_DEVICE_CACHE_SECONDS:-1800}
+      GOVEE_TEMPERATURE_UNIT: ${GOVEE_TEMPERATURE_UNIT:-F}
+      GOVEE_DATA_DIR: /data
+      HOME_LATITUDE: ${HOME_LATITUDE:-36.17}
+      HOME_LONGITUDE: ${HOME_LONGITUDE:--115.14}
+      HOME_TIMEZONE: ${HOME_TIMEZONE:-America/Los_Angeles}
+      HOME_NAME: ${HOME_NAME:-Las Vegas}
+      TZ: ${HOME_TIMEZONE:-America/Los_Angeles}
+      CLOUDFLARE_ACCESS_REQUIRED: "true"
+      CLOUDFLARE_ACCESS_TEAM: ${CLOUDFLARE_ACCESS_TEAM:?Set the Cloudflare Access team name}
+      CLOUDFLARE_ACCESS_AUD: ${CLOUDFLARE_ACCESS_AUD:?Set the weather application AUD tag}
     volumes:
-      - ./:/app
+      - dashboard_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     secrets:
       - openrouter_key
     restart: unless-stopped
@@ -28,3 +46,7 @@
 secrets:
   openrouter_key:
     file: C:/Users/Thomas/OneDrive/Documents/govee.env
+
+volumes:
+  dashboard_data:
+    name: govee_dashboard_data

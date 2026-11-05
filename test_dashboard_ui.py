@@ -1,4 +1,5 @@
 """Browser acceptance tests. AI responses here are explicit test fixtures, not live verification."""
+import os
 import unittest
 from playwright.sync_api import sync_playwright
 
@@ -18,7 +19,7 @@ class DashboardUITests(unittest.TestCase):
         self.context = self.browser.new_context(viewport={'width': 1024, 'height': 1000}, reduced_motion='reduce', service_workers='block')
         self.page = self.context.new_page()
         self.page.route('**/api/almanac/insights*', lambda r: r.fulfill(json={'insights': [], 'cached': False}))
-        self.page.goto('http://localhost:8000', wait_until='domcontentloaded')
+        self.page.goto(os.environ.get('DASHBOARD_TEST_URL', 'http://localhost:8000'), wait_until='domcontentloaded')
         self.page.get_by_role('button', name='Ask the weather', exact=True).click()
 
     def tearDown(self):

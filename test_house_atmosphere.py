@@ -1,4 +1,5 @@
 """Acceptance checks for the house scene; forecast data is an offline fixture."""
+import os
 import unittest
 from pathlib import Path
 from playwright.sync_api import sync_playwright
@@ -12,7 +13,7 @@ class HouseAtmosphereTests(unittest.TestCase):
             page.route('**/api/readings*',lambda r:r.abort())
             page.route('**/api/history*',lambda r:r.abort())
             page.route('**/api/almanac/insights*',lambda r:r.fulfill(json={'insights':[]}))
-            page.goto('http://localhost:8000/?scene=snow&time=night',wait_until='domcontentloaded')
+            page.goto(os.environ.get('DASHBOARD_TEST_URL', 'http://localhost:8000') + '/?scene=snow&time=night',wait_until='domcontentloaded')
             page.evaluate('''() => {
               _lastWeather={lat:36.17,lon:-115.14,data:{timezone:'America/Los_Angeles',current:{weathercode:0,is_day:0}}};
               applyWeatherScene(63,{},_lastWeather.data.current);
@@ -24,10 +25,11 @@ class HouseAtmosphereTests(unittest.TestCase):
             self.assertIn(expected,page.locator('#weatherCard').get_attribute('class'))
             self.assertIn('illuminated',page.locator('#moonSummary').inner_text())
             self.assertIn('Out of date',page.locator('.house-sensor[data-position=outside]').inner_text())
-            page.wait_for_function("() => document.querySelectorAll('#houseConnectors path').length === 3")
+            self.assertEqual(page.locator('.house-sensor').count(), 3)
+            self.assertEqual(page.locator('#houseConnectors path').count(), 0, "Overview uses direct sensor cards rather than connector lines")
             self.assertEqual(page.locator('#roofToggle,.house-roof,.sensor-column,.sensor-card').count(),0)
             self.assertEqual(page.locator('.house-interior').evaluate('(e)=>getComputedStyle(e).opacity'),'1')
-            self.assertEqual(page.locator('[data-house-anchor=living] circle').first.get_attribute('cy'),'246')
+            self.assertIn('Living Room', page.locator('.house-sensor[data-position=living]').inner_text())
             for width in (1440,1024,768,390,375,320):
                 page.set_viewport_size({'width':width,'height':1200})
                 self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),width)
@@ -54,7 +56,7 @@ class HouseAtmosphereTests(unittest.TestCase):
             page=browser.new_page(service_workers='block')
             page.route('https://**/*',lambda r:r.abort())
             page.route('**/api/almanac/insights*',lambda r:r.fulfill(json={'insights':[]}))
-            page.goto('http://localhost:8000',wait_until='domcontentloaded')
+            page.goto(os.environ.get('DASHBOARD_TEST_URL', 'http://localhost:8000'),wait_until='domcontentloaded')
             fixture={'timezone':'America/Los_Angeles','current':{'time':'2026-10-09T10:00'},'hourly':{'time':['2026-10-09T11:00','2026-10-09T12:00','2026-10-09T13:00'],'uv_index':[2,6.4,8]},'daily':{'uv_index_max':[9]}}
             page.evaluate('(data)=>renderSunUv(data,new Date("2026-10-09T19:15:00Z"))',fixture)
             self.assertEqual(page.locator('#sunUvValue').inner_text(),'6.4')

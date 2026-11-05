@@ -1,4 +1,5 @@
 """Seasonal weather scene acceptance; replaces the retired cottage checks."""
+import os
 import unittest
 from playwright.sync_api import sync_playwright
 
@@ -9,7 +10,7 @@ class SeasonalWeatherTests(unittest.TestCase):
             page = browser.new_page(viewport={'width':1440,'height':1100}, service_workers='block')
             page.route('https://**/*', lambda r:r.abort())
             page.route('**/api/almanac/insights*', lambda r:r.fulfill(json={'insights':[]}))
-            page.goto('http://localhost:8000', wait_until='domcontentloaded')
+            page.goto(os.environ.get('DASHBOARD_TEST_URL', 'http://localhost:8000'), wait_until='domcontentloaded')
             for code, scene in [(0,'clear'),(3,'cloud'),(45,'fog'),(63,'rain'),(73,'snow'),(85,'snow'),(86,'snow'),(95,'storm')]:
                 page.evaluate('(code)=>applyWeatherScene(code, {}, {is_day:1,time:"2026-09-23T12:00"})', code)
                 self.assertIn('scene-'+scene, page.locator('#weatherCard').get_attribute('class'))

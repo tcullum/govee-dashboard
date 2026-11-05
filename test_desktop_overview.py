@@ -1,4 +1,5 @@
 """Desktop overview acceptance checks using explicit offline weather fixtures."""
+import os
 import math
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -38,7 +39,7 @@ class DesktopOverviewTests(unittest.TestCase):
         self.page.route('**/api/**', lambda route: route.fulfill(json={'items':[], 'series':{}, 'insights':[]}))
         self.page.route('**/api/readings', lambda route: route.fulfill(json=readings))
         self.page.route('**/api/almanac/insights*', lambda route: route.fulfill(json={'insights':['Forecast fixture: a calm morning, warmer this afternoon.'], 'timestamp':timestamp}))
-        self.page.goto('http://localhost:8000', wait_until='domcontentloaded')
+        self.page.goto(os.environ.get('DASHBOARD_TEST_URL', 'http://localhost:8000'), wait_until='domcontentloaded')
         self.page.wait_for_function("() => document.querySelectorAll('#weatherUpcoming [data-day]').length === 10 && document.querySelectorAll('.house-sensor').length === 3")
         self.page.wait_for_function('() => dashboardRefreshTasks.every(task => !task.running)')
         self.settle_layout()

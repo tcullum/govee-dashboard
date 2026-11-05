@@ -62,6 +62,8 @@ Copy-Item .env.example .env
 
 ```env
 GOVEE_API_KEY=your_govee_api_key_here
+CLOUDFLARE_ACCESS_TEAM=your-team-name
+CLOUDFLARE_ACCESS_AUD=your-weather-application-audience
 PORT=8000
 ANTHROPIC_API_KEY=
 ANTHROPIC_MODEL=claude-haiku-4-5-20251001
@@ -77,9 +79,7 @@ POLLEN_CACHE_SECONDS=17280
 docker compose up -d --build
 ```
 
-5. Open:
-
-[http://localhost:8000](http://localhost:8000)
+5. Open your Cloudflare-protected weather hostname. This deployment uses [weather.cullum.dad](https://weather.cullum.dad). Configure its Access application to allow your Google account and remove public bypass policies. The direct localhost port intentionally rejects requests without a signed Access assertion. `/healthz` remains available for container health checks.
 
 ## Running Without Docker
 
@@ -110,13 +110,20 @@ OpenRouter requests use a fixed HTTPS endpoint, disabled redirects, no automatic
 Offline tests (the override exercises retained Anthropic compatibility alongside explicit OpenRouter tests; it does not change the running service):
 
 ```sh
-docker exec -e AI_PROVIDER=anthropic govee-dashboard python -m unittest test_openrouter_ai test_weather_questions test_pollen_api -q
+docker run --rm -e AI_PROVIDER=anthropic -e GOVEE_DATA_DIR=/tmp/dashboard-tests --mount type=bind,source=C:\govee-dashboard,target=/app,readonly govee-dashboard:review-fixes python -m unittest test_security_resilience test_sensor_readings test_openrouter_ai test_weather_questions test_pollen_api -q
 ```
 
 ## Environment Variables
 
 | Variable | Required | Description |
 | --- | --- | --- |
+| `CLOUDFLARE_ACCESS_TEAM` | Docker | Cloudflare Access team subdomain, without `.cloudflareaccess.com`. |
+| `CLOUDFLARE_ACCESS_AUD` | Docker | Audience tag of this weather application. |
+| `HOME_LATITUDE`, `HOME_LONGITUDE` | No | Default home forecast coordinates. |
+| `HOME_TIMEZONE` | No | Home IANA timezone; defaults to `America/Los_Angeles`. |
+| `HOME_NAME` | No | Home location label; defaults to `Las Vegas`. |
+| `GOVEE_TEMPERATURE_UNIT` | No | Router API temperature units for this account: `F` (default) or `C`. |
+| `GOVEE_DATA_DIR` | No | Runtime storage directory (`/data` in Docker). |
 | `GOVEE_API_KEY` | Yes | Govee Developer API key used to read sensor data. |
 | `PORT` | No | Server port. Defaults to `8000`. |
 | `AI_PROVIDER` | No | AI provider: `anthropic` (server default) or `openrouter` (supplied Compose deployment). |
@@ -165,17 +172,18 @@ Check server health/status:
 
 [http://localhost:8000/api/status](http://localhost:8000/api/status)
 
-Force a live readings refresh:
+Request a shared readings refresh (all triggers share a 45-second minimum interval):
 
 [http://localhost:8000/api/readings?refresh=1](http://localhost:8000/api/readings?refresh=1)
 
 ## Data And Caches
 
-The app writes a few local runtime files:
+Production stores runtime files in the `govee_dashboard_data` Docker volume mounted at `/data`. Source files are read-only in the image. Local development defaults to the project directory; set `GOVEE_DATA_DIR` to use a separate data directory. Runtime files include:
 
 - `govee_readings.csv` for sensor history (automatically trimmed to the last `LOG_RETENTION_DAYS` days, 30 by default)
 - `almanac_cache.json` for historical weather cache
 - `insights_cache.json` for AI insight cache
+- `pollen_budget.json` and `insights_budget.json` for durable upstream-attempt limits
 
 These are ignored by Git so each user keeps their own local data. Sensor history is served from an in-memory cache, so the CSV is only read once at startup. Use the export button in the dashboard header (or `/api/export`) to download the full CSV.
 
@@ -186,10 +194,10 @@ Common places to customize:
 - City comparison list: `LOCATION_PRESETS` in `app.js`
 - Default comparison cities: `DEFAULT_LOCATION_IDS` in `app.js`
 - Outdoor sensor detection: `OUTDOOR_KEYWORDS` in `app.js`
-- Weather/almanac fallback location: search for `36.17` and `-115.14`
+- Home weather defaults: `HOME_LATITUDE`, `HOME_LONGITUDE`, `HOME_TIMEZONE`, and `HOME_NAME` in `.env`
 - Visual styling and weather scene animation: `style.css`
 
-The local weather panel asks the browser for geolocation when available. If geolocation is blocked or unavailable, it falls back to Las Vegas.
+The local weather panel asks the browser for geolocation when available. If geolocation is blocked or unavailable, it uses the configured home location (Las Vegas by default).
 
 The house scene follows current weather conditions and local solar time, refreshed each minute. The permanent house cutaway shows live room and backyard readings in anchored markers. Moon phase and illumination remain visible even when the moon is below the horizon.
 
@@ -198,12 +206,14 @@ The house scene follows current weather conditions and local solar time, refresh
 | Endpoint | Purpose |
 | --- | --- |
 | `/api/readings` | Current Govee readings, cached briefly for fast UI refresh. |
-| `/api/readings?refresh=1` | Force a fresh Govee API poll. |
+| `/api/readings?refresh=1` | Request a refresh through the shared polling guard. |
 | `/api/history` | 24 hours of per-device history, downsampled, served from memory. |
 | `/api/export` | Download the full readings CSV. |
 | `/api/almanac` | Historical weather averages from Open-Meteo Archive. |
 | `/api/pollen?lat=...&lon=...` | Server-side Google pollen forecast proxy with bounded caching and rate limiting. |
-| `/api/almanac/insights` | Optional AI insights. Requires `ANTHROPIC_API_KEY`. |
+| `/api/almanac/insights` | GET cached/pending insights; POST requests a bounded refresh. Uses the configured AI provider. |
+| `/api/config` | Configured home coordinates, timezone and label. |
+| `/healthz` | Minimal unauthenticated container health check. |
 | `/api/status` | Cache, refresh, history retention, and AI status. |
 
 ## Ask The Weather API
@@ -279,3 +289,15 @@ If weather warnings look wrong:
 ## License
 
 MIT License. See [LICENSE](LICENSE).
+
+## Security and refresh behavior
+
+The supplied Compose deployment requires Cloudflare Access, validates RS256 assertions at the origin (issuer, audience, signature, expiry and user identity), and publishes only on `127.0.0.1`. Cloudflared must run on the host or another explicitly configured private connection. Ordinary local development binds to loopback and does not require Access unless `CLOUDFLARE_ACCESS_REQUIRED=true` is set. Do not expose that development configuration publicly.
+
+AI insights run in the background. GET returns cached or pending results; POST requests a refresh. All generation attempts, including failures, share a durable four-attempt daily cap and 15-minute minimum interval. Only one insight operation runs at a time. Sensor refreshes also share one background operation. The pollen budget counts every outbound attempt, persists across restarts, and never holds the cache lock during network I/O.
+
+Almanac and insights requests accept `lat`, `lon`, and `timezone`; the browser sends its forecast location. Caches are keyed by location and local calendar date. Insight timestamps include a timezone offset. Old sensor values remain visible during outages but are excluded from fresh AI context; `/api/history` returns only the last 24 hours.
+
+Dependencies are pinned in `requirements.txt` and the complete resolved Linux environment in `requirements.lock`. Rebuild to apply dependency updates; restarting does not change installed packages. The image copies explicit application assets, runs as UID 10001, and uses a read-only root filesystem with a dedicated writable data volume.
+
+Browser tests support `DASHBOARD_TEST_URL` for an isolated local preview. See [the resolution record](docs/dashboard-resolution-2026-11-04.md) for the audit-to-fix mapping and validation results.

@@ -95,8 +95,8 @@ function initDesktopOverview() {
 
   const summaries = [
     {title:'Attention', node:document.querySelector('.attention-card'), value:() => document.querySelector('#attentionList strong')?.textContent || 'What matters now', note:() => [...(document.querySelector('#attentionList .attention-item')?.childNodes || [])].filter(node => node.nodeType === Node.TEXT_NODE).map(node => node.textContent).join(' ')},
-    {title:'Air & allergens', node:document.getElementById('airQualityCard'), value:() => `${document.getElementById('airQualityLevel').textContent} · ${document.getElementById('airQualityValue').textContent}`, note:() => `Pollen: ${document.getElementById('pollenLevel').textContent}`},
-    {title:'Almanac', node:document.getElementById('almanacContainer'), value:() => `${document.getElementById('almHigh').textContent}° / ${document.getElementById('almLow').textContent}° historical avg`, note:() => document.getElementById('almDelta').textContent},
+    {title:'Air & allergens', view:'local', node:document.getElementById('airQualityCard'), value:() => `${document.getElementById('airQualityLevel').textContent} · ${document.getElementById('airQualityValue').textContent}`, note:() => `Pollen: ${document.getElementById('pollenLevel').textContent}`},
+    {title:'Almanac', view:'local', node:document.getElementById('almanacContainer'), value:() => `${document.getElementById('almHigh').textContent}° / ${document.getElementById('almLow').textContent}° historical avg`, note:() => document.getElementById('almDelta').textContent},
     {title:'AI insight', node:document.getElementById('panel-ai'), value:() => document.querySelector('#aiInsights .ai-insight-item')?.textContent.trim() || document.getElementById('aiInsights').textContent.trim() || 'Your day, explained', note:() => document.getElementById('aiInsightsTimestamp').textContent || 'Open insights or ask a question', view:'ai'}
   ];
   for (const entry of summaries) {

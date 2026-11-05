@@ -1,6 +1,11 @@
-flask>=3.0
-requests>=2.31
-anthropic>=0.40
-httpx>=0.27
-waitress>=3.0
-python-dotenv>=1.0
+flask==3.1.3
+requests==2.34.2
+anthropic==1.4.0
+httpx==0.28.1
+waitress==3.0.2
+python-dotenv==1.2.4
+certifi==2026.10.23
+urllib3==2.8.0
+werkzeug==3.1.9
+PyJWT[crypto]==2.15.1
+cryptography==50.0.2
