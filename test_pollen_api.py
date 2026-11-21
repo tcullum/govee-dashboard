@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import types
 import unittest
 from unittest.mock import Mock, patch
@@ -34,6 +35,16 @@ class PollenApiTests(unittest.TestCase):
         govee_server._pollen_cache.clear()
         govee_server._pollen_request_times.clear()
         govee_server._pollen_client_requests.clear()
+        # The pollen disk cache and budget persist across restarts; keep tests
+        # off whatever the developer's data directory happens to contain.
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        for name, filename in (("_pollen_disk_cache_path", "pollen-cache.json"),
+                               ("_pollen_budget_path", "pollen-budget.json")):
+            patcher = patch.object(govee_server, name, os.path.join(self._tmp.name, filename))
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        govee_server._pollen_inflight.clear()
 
     def test_requires_server_api_key(self):
         with patch.dict(os.environ, {}, clear=False):

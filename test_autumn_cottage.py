@@ -6,10 +6,11 @@ from playwright.sync_api import sync_playwright
 class SeasonalWeatherTests(unittest.TestCase):
     def test_conditions_seasons_motion_and_responsive_layout(self):
         with sync_playwright() as p:
-            browser = p.chromium.launch(channel='msedge', headless=True)
+            browser = p.chromium.launch(channel=os.environ.get('BROWSER_CHANNEL', 'msedge'), headless=True)
             page = browser.new_page(viewport={'width':1440,'height':1100}, service_workers='block')
             page.route('https://**/*', lambda r:r.abort())
             page.route('**/api/almanac/insights*', lambda r:r.fulfill(json={'insights':[]}))
+            page.route('**/api/forecast*', lambda r:r.abort())
             page.goto(os.environ.get('DASHBOARD_TEST_URL', 'http://localhost:8000'), wait_until='domcontentloaded')
             for code, scene in [(0,'clear'),(3,'cloud'),(45,'fog'),(63,'rain'),(73,'snow'),(85,'snow'),(86,'snow'),(95,'storm')]:
                 page.evaluate('(code)=>applyWeatherScene(code, {}, {is_day:1,time:"2026-09-23T12:00"})', code)

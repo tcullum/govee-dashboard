@@ -10,7 +10,7 @@ class DesktopOverviewTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.pw = sync_playwright().start()
-        cls.browser = cls.pw.chromium.launch(channel='msedge', headless=True)
+        cls.browser = cls.pw.chromium.launch(channel=os.environ.get('BROWSER_CHANNEL', 'msedge'), headless=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -38,6 +38,7 @@ class DesktopOverviewTests(unittest.TestCase):
         self.page.route('https://api.open-meteo.com/v1/forecast?*', lambda route: route.fulfill(json=weather))
         self.page.route('**/api/**', lambda route: route.fulfill(json={'items':[], 'series':{}, 'insights':[]}))
         self.page.route('**/api/readings', lambda route: route.fulfill(json=readings))
+        self.page.route('**/api/forecast*', lambda route: route.fulfill(json=weather))
         self.page.route('**/api/almanac/insights*', lambda route: route.fulfill(json={'insights':['Forecast fixture: a calm morning, warmer this afternoon.'], 'timestamp':timestamp}))
         self.page.goto(os.environ.get('DASHBOARD_TEST_URL', 'http://localhost:8000'), wait_until='domcontentloaded')
         self.page.wait_for_function("() => document.querySelectorAll('#weatherUpcoming [data-day]').length === 10 && document.querySelectorAll('.house-sensor').length === 3")

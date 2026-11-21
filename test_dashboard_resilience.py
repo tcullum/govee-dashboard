@@ -8,7 +8,7 @@ class DashboardResilienceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.playwright = sync_playwright().start()
-        cls.browser = cls.playwright.chromium.launch(channel="msedge", headless=True)
+        cls.browser = cls.playwright.chromium.launch(channel=os.environ.get("BROWSER_CHANNEL", "msedge"), headless=True)
 
     @classmethod
     def tearDownClass(cls):

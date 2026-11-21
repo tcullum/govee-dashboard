@@ -8,7 +8,7 @@ class DashboardUITests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.pw = sync_playwright().start()
-        cls.browser = cls.pw.chromium.launch(channel='msedge', headless=True)
+        cls.browser = cls.pw.chromium.launch(channel=os.environ.get('BROWSER_CHANNEL', 'msedge'), headless=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -38,7 +38,7 @@ class DashboardUITests(unittest.TestCase):
             route.fulfill(json={'answer': '<script>test</script> Forecast fixture answer.', 'sources': [{'label': 'Open-Meteo', 'url': 'https://open-meteo.com/'}, {'label': 'Unsafe', 'url': 'javascript:alert(1)'}], 'generated_at': '2026-09-07T12:00:00Z', 'location': 'Seattle', 'unit': 'C'})
         self.page.route('**/api/weather/ask', reply)
         self.page.evaluate("_lastWeather = {lat:47.6,lon:-122.3,locName:'Seattle',usedFallback:false}; unit='C'")
-        self.page.locator('[data-weather-question]').first.click()
+        self.page.get_by_role('button', name='Umbrella tomorrow?', exact=True).click()
         self.assertEqual(self.page.locator('#weatherQuestion').input_value(), 'Will I need an umbrella tomorrow?')
         self.page.locator('#weatherAskSubmit').click()
         self.page.locator('#weatherAskResult').wait_for(state='visible')
@@ -64,10 +64,13 @@ class DashboardUITests(unittest.TestCase):
         self.page.evaluate("_lastReadings.items[0].timestamp = '2000-01-01T00:00:00Z'; renderHomeOverview()")
         self.assertEqual(self.page.locator('#overviewIndoor').inner_text(), '—')
 
-    def test_old_ai_insights_are_explicitly_labeled(self):
+    def test_old_ai_insights_show_their_original_update_time(self):
         self.page.route('**/api/almanac/insights*', lambda r: r.fulfill(json={'insights': ['Historical fixture, not current weather.'], 'cached': True, 'stale': True, 'timestamp': '2020-01-01T12:00:00'}))
         self.page.evaluate('loadAlmanacInsights()')
-        self.assertIn('Out of date', self.page.locator('#aiInsightsTimestamp').inner_text())
+        stamp = self.page.locator('#aiInsightsTimestamp').inner_text()
+        self.assertIn('Jan 1', stamp)
+        self.assertIn('update', stamp)
+        self.assertNotIn('Just now', stamp)
 
     def test_mobile_panels_fill_available_width_without_internal_overflow(self):
         self.page.set_viewport_size({'width': 390, 'height': 900})
@@ -111,7 +114,7 @@ Both days will be **below 100°F**.
                 self.page.get_by_role('button', name='Ask the Almanac', exact=True).click()
             self.assertTrue(area.evaluate('(el) => el.scrollWidth <= el.clientWidth + 1'))
             self.assertEqual(area.locator('script,img,iframe,a').count(), 0)
-        self.page.locator('#weatherAskResult').screenshot(path='C:/Users/Thomas/AppData/Local/hermes/cache/govee-answer-mobile.png')
+        self.page.locator('#weatherAskResult').screenshot(path=os.path.join(os.environ.get('TEMP') or os.environ.get('TMPDIR') or '/tmp', 'govee-answer-mobile.png'))
 
     def test_question_error_is_recoverable(self):
         self.page.route('**/api/weather/ask', lambda r: r.fulfill(status=503, json={'error': 'AI service is temporarily unavailable.'}))

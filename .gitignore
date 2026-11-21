@@ -35,6 +35,7 @@ Thumbs.db
 insights_cache.json
 almanac_cache.json
 almanac_history_cache.json
+pollen_cache.json
 govee_readings.csv
 *.log
 data/

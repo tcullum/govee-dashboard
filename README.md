@@ -34,7 +34,7 @@ The published port now listens only on `127.0.0.1`. Direct API requests without 
 
 ## Screenshots
 
-Interface screenshots captured October 31, 2026. The November 4 release preserves this layout while improving security and reliability.
+Interface screenshots captured November 21, 2026 (v2026.11.21): the desktop overview with the live weather scene, 24-hour sensor history, and Ask the Almanac.
 
 ![Desktop dashboard in dark mode](docs/screenshot-desktop.png)
 

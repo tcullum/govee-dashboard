@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 class MoonTests(unittest.TestCase):
     def test_phase_visibility_and_tooltip(self):
         with sync_playwright() as p:
-            browser=p.chromium.launch(channel='msedge',headless=True)
+            browser=p.chromium.launch(channel=os.environ.get('BROWSER_CHANNEL', 'msedge'),headless=True)
             page=browser.new_page(viewport={'width':1440,'height':1000},service_workers='block')
             page.route('https://**/*',lambda r:r.abort())
             page.route('**/api/**',lambda r:r.fulfill(json={'items':[],'series':{},'insights':[]}))

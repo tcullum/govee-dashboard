@@ -100,6 +100,8 @@ register_weather_questions(app, ANTHROPIC_MODEL, os.path.join(DATA_DIR, "almanac
 STATIC_FILES = {
     "index.html", "app.js", "style.css", "service-worker.js", "manifest.json",
     "favicon.ico", "favicon-16x16.png", "favicon-32x32.png",
+    "favicon/android-chrome-192x192.png", "favicon/android-chrome-512x512.png",
+    "favicon/apple-touch-icon.png",
     "assets/dashboard-tabs.css", "assets/desktop-overview.css", "assets/desktop-overview.js",
     "assets/autumn-cabin.png", "assets/d3-array.min.js", "assets/d3-geo.min.js",
     "assets/sensor-living-room.svg", "assets/sensor-office.svg", "assets/sensor-backyard.svg",

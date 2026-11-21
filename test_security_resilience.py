@@ -73,6 +73,7 @@ class ResilienceTests(unittest.TestCase):
             "INSIGHTS_CACHE_FILE": str(self.directory / "insights.json"),
             "_insights_budget_path": str(self.directory / "insights-budget.json"),
             "_pollen_budget_path": str(self.directory / "pollen-budget.json"),
+            "_pollen_disk_cache_path": str(self.directory / "pollen-cache.json"),
             "_insights_active": False, "_insights_error": None, "_insights_attempts": deque(),
             "_pollen_request_times": deque(), "_pollen_cache": {}, "_pollen_inflight": set(), "_pollen_client_requests": {},
             "_readings_cache": None, "_readings_refreshing": False, "_readings_last_attempt": float("-inf"),

@@ -8,7 +8,7 @@ class DashboardTabsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.pw = sync_playwright().start()
-        cls.browser = cls.pw.chromium.launch(channel='msedge', headless=True)
+        cls.browser = cls.pw.chromium.launch(channel=os.environ.get('BROWSER_CHANNEL', 'msedge'), headless=True)
 
     @classmethod
     def tearDownClass(cls):

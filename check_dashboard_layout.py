@@ -1,12 +1,15 @@
 """Real browser layout/interaction checks; no mocked telemetry or AI calls."""
 import json
+import os
+import tempfile
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-out = Path('C:/Users/Thomas/AppData/Local/hermes/cache/govee-review')
+out = Path(tempfile.mkdtemp(prefix='govee-layout-'))
+print(f'Layout screenshots: {out}')
 out.mkdir(parents=True, exist_ok=True)
 with sync_playwright() as p:
-    browser = p.chromium.launch(channel='msedge', headless=True)
+    browser = p.chromium.launch(channel=os.environ.get('BROWSER_CHANNEL', 'msedge'), headless=True)
     context = browser.new_context(service_workers='block', reduced_motion='reduce')
     page = context.new_page()
     errors = []
