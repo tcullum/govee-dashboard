@@ -499,6 +499,11 @@ function updateSkyMotion(card, current = {}, sunrise, sunset, isDay) {
   const gustDuration = clamp(22 - (gustMph * .38), 7, 24);
   const gustOpacity = clamp((Math.max(gustMph, windMph) - 14) / 22, 0, .82);
   const gustDistance = clamp(96 + (gustMph * 2.8), 116, 188);
+  // Wind-driven leaves: any season, speed and opacity scale with the breeze.
+  const leafWind = Math.max(windMph, gustMph * .8);
+  card.classList.toggle('scene-windy', leafWind >= 10);
+  card.style.setProperty('--leaf-speed', `${clamp(17 - leafWind * .5, 4.5, 15).toFixed(1)}s`);
+  card.style.setProperty('--leaf-opacity', clamp((leafWind - 8) / 16, .4, .95).toFixed(2));
   const windDirection = Number(current.wind_direction_10m);
 
   card.style.setProperty('--cloud-speed', `${baseDuration.toFixed(1)}s`);
@@ -534,7 +539,7 @@ function applyWeatherScene(code, daily, current) {
 
   const sceneClasses = [
     'scene-clear', 'scene-cloud', 'scene-rain', 'scene-snow', 'scene-storm', 'scene-fog',
-    'scene-day', 'scene-night',
+    'scene-day', 'scene-night', 'scene-windy',
     'moon-new', 'moon-waxing-crescent', 'moon-first-quarter', 'moon-waxing-gibbous',
     'moon-full', 'moon-waning-gibbous', 'moon-last-quarter', 'moon-waning-crescent'
   ];
@@ -2115,19 +2120,11 @@ const resizeObserver = new ResizeObserver(entries => {
 });
 
 /* === AI INSIGHTS LOGIC === */
-function getTimeAgo(timestamp) {
-  if (!timestamp) return '';
-  const now = new Date();
-  const then = new Date(timestamp);
-  const diffMs = now - then;
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-
-  if (diffMins < 1) return 'Updated just now';
-  if (diffMins < 60) return `Updated ${diffMins} ${diffMins === 1 ? 'minute' : 'minutes'} ago`;
-  if (diffHours < 24) return `Updated ${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  return `Updated ${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
+function formatInsightsTime(date, timeZone) {
+  const day = new Intl.DateTimeFormat('en-US', {timeZone, month:'short', day:'numeric'});
+  const time = new Intl.DateTimeFormat('en-US', {timeZone, hour:'numeric', minute:'2-digit'});
+  const label = time.format(date).replace(':00', '');
+  return day.format(date) === day.format(new Date()) ? label : `${day.format(date)} at ${label}`;
 }
 
 function weatherContextParams() {
@@ -2138,11 +2135,16 @@ function weatherContextParams() {
 }
 
 let insightsRetryTimer = null;
+let weatherReady = false;
 
 async function loadAlmanacInsights(forceRefresh = false) {
   const container = document.getElementById('aiInsights');
   const timestampEl = document.getElementById('aiInsightsTimestamp');
   if (!container) return;
+  if (!weatherReady && !_lastWeather) {
+    container.textContent = 'Waiting for the forecast location…';
+    return false;
+  }
 
   // Save scroll position and container height to prevent scroll jump
   const scrollY = window.scrollY;
@@ -2172,6 +2174,10 @@ async function loadAlmanacInsights(forceRefresh = false) {
 
     const data = await res.json();
     const insights = data.insights || [];
+    const nextUpdate = data.next_update_at
+      ? `Next update ${formatInsightsTime(new Date(data.next_update_at * 1000), data.timezone)}`
+      : data.last_error;
+    const refreshStatus = data.refreshing ? 'Preparing next update…' : nextUpdate;
     clearTimeout(insightsRetryTimer);
     if (data.refreshing) {
       if (timestampEl) timestampEl.textContent = 'Preparing fresh insights…';
@@ -2180,12 +2186,11 @@ async function loadAlmanacInsights(forceRefresh = false) {
       }, 5000);
     }
     if (!insights.length && (data.refreshing || data.last_error)) {
-      container.textContent = data.refreshing ? 'Preparing fresh insights…' : data.last_error;
+      container.textContent = data.refreshing ? 'Preparing fresh insights…' : refreshStatus;
       container.style.minHeight = '';
       return;
     }
-    const isStale = data.stale || (data.timestamp && Date.now() - new Date(data.timestamp).getTime() > 86400000);
-    setTabAttention('ai', isStale ? 'Insights are out of date' : (insights.length ? 'New AI insights' : ''), [!!isStale, insights]);
+    setTabAttention('ai', insights.length ? 'New AI insights' : '', [data.timestamp, insights]);
 
     if (insights.length === 0) {
       container.innerHTML = '<div style="font-size:12px; color:var(--muted); font-style:italic;">No insights available</div>';
@@ -2209,11 +2214,9 @@ async function loadAlmanacInsights(forceRefresh = false) {
 
     // Update timestamp
     if (timestampEl && data.timestamp) {
-      const timeAgo = getTimeAgo(data.timestamp);
-      const stale = data.stale || Date.now() - new Date(data.timestamp).getTime() > 86400000;
-      const cacheStatus = stale ? ' · Not current conditions' : (data.cached ? ' (cached)' : ' (fresh)');
-      timestampEl.classList.toggle('is-stale', !!stale);
-      timestampEl.textContent = (stale ? 'Out of date · ' : '') + timeAgo + cacheStatus;
+      const update = formatInsightsTime(new Date(data.timestamp), data.timezone);
+      timestampEl.textContent = `${update} update`;
+      if (refreshStatus) timestampEl.textContent += ` · ${refreshStatus}`;
     }
 
     // Clear min-height and restore scroll position after rendering
@@ -2789,7 +2792,7 @@ function renderWeather() {
       const hint = document.createElement('span');
       hint.className = 'loc-default-hint';
       hint.textContent = 'default';
-      hint.title = 'Location access unavailable — showing the default location';
+      hint.title = _lastWeather.fallbackReason || 'Location access unavailable — showing the default location';
       elements.weather.loc.appendChild(hint);
     }
     const currentTemp = data.current.temperature_2m;
@@ -2900,26 +2903,78 @@ async function loadHomeLocation() {
   } catch (error) { console.warn('Home configuration unavailable', error); }
 }
 
+let geoFix = null;      // Last successful browser position.
+let geoRequest = null;  // In-flight position request, shared by callers.
+let geoFallbackReason = '';
+
+function requestGeoPosition() {
+  if (!window.isSecureContext || !navigator.geolocation) {
+    geoFallbackReason = 'Location needs a secure (HTTPS) connection — showing the default location';
+    return Promise.resolve(null);
+  }
+  // The permission prompt counts against the timeout in Safari and Chrome, so
+  // the deadline must outlast login + reading the prompt; the forecast never
+  // waits on this request, so a long deadline costs nothing.
+  geoRequest ||= new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, {timeout:120000, maximumAge:600000}))
+    .then(pos => {
+      geoFallbackReason = '';
+      geoFix = {lat: pos.coords.latitude, lon: pos.coords.longitude};
+      return geoFix;
+    })
+    .catch(posError => {
+      geoFallbackReason = posError?.code === 1 ? 'Location permission denied — allow it in the browser and OS settings'
+        : posError?.code === 2 ? 'Position unavailable — OS location services may be turned off'
+        : posError?.code === 3 ? 'Location request timed out — showing the default location'
+        : 'Location unavailable — showing the default location';
+      console.warn('Geolocation failed:', posError?.message || posError);
+      return null;
+    })
+    .finally(() => { geoRequest = null; });
+  return geoRequest;
+}
+
+// Once a position arrives, reload the forecast for it right away instead of
+// leaving the default location up until the next 15-minute refresh.
+function reloadWeatherOnFix(fixPromise) {
+  fixPromise.then(fix => {
+    if (!fix || (_lastWeather && _lastWeather.lat === fix.lat && _lastWeather.lon === fix.lon)) return;
+    const task = dashboardRefreshTasks.find(t => t.key === 'weather');
+    if (task) task.lastAttempt = 0;
+    refreshDashboard();
+  });
+}
+
 async function loadWeather() {
   let lat = homeLocation.latitude, lon = homeLocation.longitude, locName = homeLocation.name;
   let usedFallback = true;
 
-  if (location.protocol === 'https:' || location.hostname === 'localhost') {
+  const request = requestGeoPosition();
+  // Wait briefly for a cached or fast fix; past that, show the last known or
+  // default location now and reload when the real position arrives.
+  const fix = await Promise.race([request, new Promise(r => setTimeout(() => r(geoFix), 4000))]);
+  if (fix) {
+    lat = fix.lat; lon = fix.lon;
+    usedFallback = false;
+    locName = 'Local Weather';
     try {
-      const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, {timeout:5000}));
-      lat = pos.coords.latitude; lon = pos.coords.longitude;
-      usedFallback = false;
       const geo = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`, {signal:AbortSignal.timeout(5000)}).then(r=>r.json());
-      locName = geo.locality || geo.city || "Local Weather";
-    } catch {}
+      locName = geo.locality || geo.city || locName;
+    } catch (geoError) { console.warn('Reverse geocode failed:', geoError); }
+  } else {
+    reloadWeatherOnFix(request);
   }
+  const fallbackReason = usedFallback
+    ? (geoFallbackReason || 'Waiting for your location — the forecast updates when it arrives')
+    : '';
 
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=is_day,temperature_2m,relative_humidity_2m,weathercode,wind_speed_10m,wind_direction_10m,wind_gusts_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode,sunrise,sunset,apparent_temperature_max,apparent_temperature_min,uv_index_max,wind_speed_10m_max,wind_gusts_10m_max,precipitation_sum&hourly=temperature_2m,precipitation_probability,weathercode,uv_index&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&forecast_days=11&timezone=auto`;
+  const url = `/api/forecast?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
 
   try {
-    const data = await fetch(url, {signal:AbortSignal.timeout(20000)}).then(r=>r.json());
+    const resp = await fetch(url, {signal:AbortSignal.timeout(30000)});
+    if (!resp.ok) throw new Error(`Forecast proxy returned ${resp.status}`);
+    const data = await resp.json();
     const locationChanged = !_lastWeather || _lastWeather.lat !== lat || _lastWeather.lon !== lon;
-    _lastWeather = { data, locName, usedFallback, lat, lon };
+    _lastWeather = { data, locName, usedFallback, fallbackReason, lat, lon };
     if (locationChanged) for (const task of dashboardRefreshTasks) {
       if (task.key === 'local' || task.key === 'insights') task.lastAttempt = 0;
     }
@@ -2931,6 +2986,9 @@ async function loadWeather() {
   } catch (e) {
     console.error("Weather error:", e);
     elements.weather.status.textContent = "Weather Unavailable";
+    // Retry in ~1 minute instead of waiting out the 15-minute cycle.
+    const weatherTask = dashboardRefreshTasks.find(t => t.key === 'weather');
+    if (weatherTask) weatherTask.lastAttempt = Date.now() - weatherTask.every + 60000;
   }
 }
 
@@ -2955,13 +3013,17 @@ function renderHomeOverview() {
   const timezone = _lastWeather?.data?.timezone;
   document.getElementById('overviewDate').textContent = new Date().toLocaleString([], {weekday:'long',month:'long',day:'numeric',hour:'numeric',minute:'2-digit', ...(timezone ? {timeZone:timezone} : {})});
   renderHouseSensors(items);
+  renderHomeHistory();
 }
 
 function renderHouseSensors(items) {
   const container = document.getElementById('houseSensors');
   container.replaceChildren();
   elements.weather.card.style.setProperty('--sensor-rows', Math.ceil(items.length / 2));
-  items.forEach((item, index) => {
+  // Same order as the chart legend so colors, names and rows line up.
+  const ordered = items.map((item, index) => ({ item, index, position: homeSensorPosition(item, index) }))
+    .sort((a, b) => HOME_HISTORY_ORDER[a.position] - HOME_HISTORY_ORDER[b.position]);
+  ordered.forEach(({ item, index }) => {
     const name = displaySensorName(item);
     const age = Date.now() - new Date(item.timestamp).getTime();
     const fresh = Number.isFinite(age) && age >= -60000 && age <= 300000;
@@ -2985,6 +3047,273 @@ function renderHouseSensors(items) {
     container.append(button);
   });
   requestAnimationFrame(drawHouseConnections);
+}
+
+/* === 24-HOUR SENSOR HISTORY ===
+   Replaces the illustrative house: three live temperature traces over the
+   last 24 hours, with per-sensor lows/highs so the overnight story is legible. */
+const HOME_HISTORY_COLORS = { living: '#f2b263', office: '#63cfe0', outside: '#8fd6a4', room: '#c9b8e8' };
+const HOME_HISTORY_ORDER = { living: 0, office: 1, room: 2, outside: 3 };
+let _homeHistoryModel = null;
+
+function homeSensorPosition(item, index) {
+  const name = displaySensorName(item).toLowerCase();
+  if (isOutdoorSensor(item)) return 'outside';
+  if (name.includes('office')) return 'office';
+  if (name.includes('living') || index === 0) return 'living';
+  return 'room';
+}
+
+function buildHomeHistoryModel() {
+  const items = _lastReadings?.items || [];
+  const now = Date.now();
+  const t0 = now - 24 * 3600 * 1000;
+  const series = [];
+  items.forEach((item, index) => {
+    const points = (_lastHistory[item.device] || []).map(point => {
+      const t = new Date(point.timestamp).getTime();
+      const c = Number(point.temp_c);
+      if (!Number.isFinite(t) || !Number.isFinite(c)) return null;
+      return { t, v: unit === 'C' ? c : cToF(c) };
+    }).filter(point => point && point.t >= t0 && point.t <= now + 60000).sort((a, b) => a.t - b.t);
+    if (!points.length) return;
+    const position = homeSensorPosition(item, index);
+    series.push({
+      device: item.device, name: displaySensorName(item), position,
+      color: HOME_HISTORY_COLORS[position] || HOME_HISTORY_COLORS.room, points
+    });
+  });
+  series.sort((a, b) => HOME_HISTORY_ORDER[a.position] - HOME_HISTORY_ORDER[b.position]);
+  if (!series.length) return null;
+  let vMin = Infinity, vMax = -Infinity;
+  for (const s of series) for (const p of s.points) {
+    if (p.v < vMin) vMin = p.v;
+    if (p.v > vMax) vMax = p.v;
+  }
+  const pad = Math.max((vMax - vMin) * .12, 2);
+  return { series, t0, t1: now, vMin: vMin - pad, vMax: vMax + pad };
+}
+
+function homeHistoryNiceStep(span) {
+  const raw = Math.max(span, .1) / 4;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  for (const m of [1, 2, 2.5, 5, 10]) if (raw <= m * mag) return m * mag;
+  return 10 * mag;
+}
+
+function homeHistoryNearest(points, t) {
+  let best = null, bestGap = Infinity;
+  for (const p of points) {
+    const gap = Math.abs(p.t - t);
+    if (gap < bestGap) { bestGap = gap; best = p; }
+  }
+  return best;
+}
+
+function homeHistoryExtremes(series) {
+  let lo = series.points[0], hi = series.points[0];
+  for (const p of series.points) {
+    if (p.v < lo.v) lo = p;
+    if (p.v > hi.v) hi = p;
+  }
+  return { lo, hi };
+}
+
+const HOME_HISTORY_PAD = { left: 36, right: 12, top: 8, bottom: 22 };
+
+function drawHomeHistory(hoverT = null) {
+  const canvas = document.getElementById('homeHistoryChart');
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width < 40 || rect.height < 40) return;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+  ctx.clearRect(0, 0, W, H);
+  const model = _homeHistoryModel;
+  if (!model) {
+    ctx.fillStyle = 'rgba(230,240,242,.55)';
+    ctx.font = '12px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Waiting for sensor history…', W / 2, H / 2);
+    return;
+  }
+  const { left: padL, right: padR, top: padT, bottom: padB } = HOME_HISTORY_PAD;
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const X = t => padL + ((t - model.t0) / (model.t1 - model.t0)) * iw;
+  const Y = v => padT + (1 - (v - model.vMin) / (model.vMax - model.vMin)) * ih;
+
+  // Shade the overnight hours so the backyard dip reads against the day/night cycle.
+  const daily = _lastWeather?.data?.daily;
+  if (daily?.sunrise?.length && daily?.sunset?.length) {
+    const rises = daily.sunrise.map(v => new Date(v).getTime()).filter(Number.isFinite);
+    const sets = daily.sunset.map(v => new Date(v).getTime()).filter(Number.isFinite);
+    if (rises.length && sets.length) {
+      const bands = [];
+      if (rises[0] > model.t0) bands.push([Math.max(model.t0, sets[0] - 86400000), rises[0]]);
+      for (let i = 0; i + 1 < rises.length && i < sets.length; i++) bands.push([sets[i], rises[i + 1]]);
+      ctx.fillStyle = 'rgba(3,9,22,.22)';
+      for (const [a, b] of bands) {
+        const lo = Math.max(a, model.t0), hi = Math.min(b, model.t1);
+        if (hi > lo) ctx.fillRect(X(lo), padT, X(hi) - X(lo), ih);
+      }
+    }
+  }
+
+  ctx.font = '11.5px Inter, sans-serif';
+  const step = homeHistoryNiceStep(model.vMax - model.vMin);
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let v = Math.ceil(model.vMin / step) * step; v <= model.vMax + 1e-9; v += step) {
+    const y = Y(v);
+    ctx.strokeStyle = 'rgba(255,255,255,.09)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    ctx.fillStyle = 'rgba(226,236,238,.6)';
+    ctx.fillText(`${Math.round(v)}°`, padL - 6, y);
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const tick = new Date(model.t0);
+  tick.setMinutes(0, 0, 0);
+  while (tick.getHours() % 6 !== 0) tick.setHours(tick.getHours() + 1);
+  for (let t = tick.getTime(); t <= model.t1; t += 6 * 3600 * 1000) {
+    if (t < model.t0) continue;
+    const x = X(t);
+    ctx.strokeStyle = 'rgba(255,255,255,.06)';
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + ih); ctx.stroke();
+    ctx.fillStyle = 'rgba(226,236,238,.6)';
+    ctx.fillText(new Date(t).toLocaleTimeString([], { hour: 'numeric' }), x, padT + ih + 6);
+  }
+
+  for (const s of model.series) {
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    s.points.forEach((p, i) => {
+      const x = X(p.t), y = Y(p.v);
+      if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    });
+    ctx.stroke();
+    const last = s.points[s.points.length - 1];
+    ctx.fillStyle = s.color;
+    ctx.beginPath(); ctx.arc(X(last.t), Y(last.v), 3, 0, Math.PI * 2); ctx.fill();
+  }
+
+  if (hoverT != null) {
+    const x = X(hoverT);
+    ctx.strokeStyle = 'rgba(255,255,255,.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + ih); ctx.stroke();
+    for (const s of model.series) {
+      const p = homeHistoryNearest(s.points, hoverT);
+      if (!p) continue;
+      ctx.fillStyle = s.color;
+      ctx.beginPath(); ctx.arc(X(p.t), Y(p.v), 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(8,18,28,.85)';
+      ctx.stroke();
+    }
+  }
+}
+
+function updateHomeHistoryReadout(hoverT = null) {
+  const el = document.getElementById('homeHistoryReadout');
+  if (!el) return;
+  const model = _homeHistoryModel;
+  if (!model) { el.textContent = ''; return; }
+  const t = hoverT ?? model.t1;
+  const parts = model.series.map(s => {
+    const p = homeHistoryNearest(s.points, t);
+    return p ? `<b style="color:${s.color}">${Math.round(p.v)}°</b>` : null;
+  }).filter(Boolean);
+  const label = hoverT != null
+    ? new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : 'Now';
+  el.innerHTML = `${label} · ${parts.join(' · ')}`;
+}
+
+function renderHomeHistoryLegend() {
+  const legend = document.getElementById('homeHistoryLegend');
+  if (!legend) return;
+  legend.replaceChildren();
+  const model = _homeHistoryModel;
+  if (!model) return;
+  const fmtClock = t => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const fmtClockShort = t => fmtClock(t).replace(' AM', 'a').replace(' PM', 'p');
+  for (const s of model.series) {
+    const { lo, hi } = homeHistoryExtremes(s);
+    const row = document.createElement('div');
+    row.className = 'hh-key';
+    row.style.setProperty('--hh-color', s.color);
+    row.innerHTML = '<span class="hh-dot"></span><span class="hh-name"></span>' +
+      `<span class="hh-range">↓<strong>${lo.v.toFixed(1)}°</strong> ${fmtClockShort(lo.t)} · ↑${hi.v.toFixed(1)}°</span>`;
+    row.querySelector('.hh-name').textContent = s.name;
+    row.title = `${s.name}: 24-hour low ${lo.v.toFixed(1)}° at ${fmtClock(lo.t)}, high ${hi.v.toFixed(1)}° at ${fmtClock(hi.t)}`;
+    legend.append(row);
+  }
+}
+
+function renderHomeHistory() {
+  _homeHistoryModel = buildHomeHistoryModel();
+  drawHomeHistory();
+  updateHomeHistoryReadout();
+  renderHomeHistoryLegend();
+  // Layout can settle after this call (font swap, sensor rows rebuilding);
+  // confirm the paint once more on the next frames instead of trusting one draw.
+  requestAnimationFrame(() => drawHomeHistory());
+  setTimeout(() => drawHomeHistory(), 300);
+  const canvas = document.getElementById('homeHistoryChart');
+  if (!canvas) return;
+  if (!_homeHistoryModel) {
+    canvas.setAttribute('aria-label', 'Temperature history for the last 24 hours is loading');
+    return;
+  }
+  const fmtClock = t => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const summary = _homeHistoryModel.series.map(s => {
+    const { lo, hi } = homeHistoryExtremes(s);
+    return `${s.name} low ${lo.v.toFixed(1)}° at ${fmtClock(lo.t)}, high ${hi.v.toFixed(1)}°`;
+  }).join('; ');
+  canvas.setAttribute('aria-label', `Temperature, last 24 hours (${unit}): ${summary}`);
+}
+
+function bindHomeHistoryPointer() {
+  const canvas = document.getElementById('homeHistoryChart');
+  if (!canvas) return;
+  const hoverAt = event => {
+    const model = _homeHistoryModel;
+    if (!model) return;
+    const rect = canvas.getBoundingClientRect();
+    const { left: padL, right: padR } = HOME_HISTORY_PAD;
+    const frac = clamp((event.clientX - rect.left - padL) / Math.max(rect.width - padL - padR, 1), 0, 1);
+    const t = model.t0 + frac * (model.t1 - model.t0);
+    drawHomeHistory(t);
+    updateHomeHistoryReadout(t);
+  };
+  const reset = () => { drawHomeHistory(); updateHomeHistoryReadout(); };
+  canvas.style.touchAction = 'pan-y';
+  canvas.addEventListener('pointermove', hoverAt);
+  canvas.addEventListener('pointerdown', hoverAt);
+  canvas.addEventListener('pointerleave', reset);
+  canvas.addEventListener('pointercancel', reset);
+  // A lost 2D context leaves the canvas blank with its size intact; repaint on restore.
+  canvas.addEventListener('contextrestored', () => drawHomeHistory());
+  document.fonts?.ready?.then(() => drawHomeHistory());
+  let resizeFrame = null;
+  new ResizeObserver(() => {
+    // Coalesce to one draw per frame; debouncing with timers left a window
+    // where the final layout change never got a repaint.
+    if (resizeFrame) return;
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = null;
+      drawHomeHistory();
+    });
+  }).observe(canvas);
 }
 
 function drawSunConnection() {
@@ -3018,7 +3347,9 @@ function drawHouseConnections() {
   drawSunConnection();
   const card = elements.weather.card;
   const art = card.querySelector('.house-art');
+  if (!art) return;
   const overlay = document.getElementById('houseConnectors');
+  if (!overlay) return;
   const matrix = art.getScreenCTM();
   if (!matrix) return;
   const anchors = {living: [396, 246], office: [551, 235], outside: [694, 287], room: [483, 290]};
@@ -3096,7 +3427,7 @@ function renderWeatherAnswer(container, answer) {
   }
 }
 
-/* === WEATHER QUESTIONS === */
+/* === ALMANAC QUESTIONS === */
 function updateWeatherAskContext() {
   const label = document.getElementById('weatherAskContext');
   if (!label) return;
@@ -3128,7 +3459,7 @@ function initWeatherQuestions() {
     event.preventDefault();
     const question = input.value.trim();
     if (busy) return;
-    if (!question) { input.setCustomValidity('Enter a weather question.'); input.reportValidity(); return; }
+    if (!question) { input.setCustomValidity('Enter a question for the almanac.'); input.reportValidity(); return; }
     input.setCustomValidity('');
     busy = true;
     submit.disabled = true;
@@ -3136,7 +3467,7 @@ function initWeatherQuestions() {
     suggestions.forEach(button => { button.disabled = true; });
     panel.setAttribute('aria-busy', 'true');
     status.classList.remove('is-error');
-    status.textContent = 'Checking the forecast and preparing your answer…';
+    status.textContent = 'Checking the forecast and the records…';
     result.hidden = true;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 60000);
@@ -3149,7 +3480,7 @@ function initWeatherQuestions() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const detail = typeof data.error === 'string' && data.error.length <= 240 ? data.error : 'The weather assistant is unavailable. Please try again.';
+        const detail = typeof data.error === 'string' && data.error.length <= 240 ? data.error : 'The almanac is unavailable. Please try again.';
         throw new Error(detail);
       }
       if (typeof data.answer !== 'string' || !data.answer.trim()) throw new Error('No answer was returned. Please try again.');
@@ -3172,7 +3503,7 @@ function initWeatherQuestions() {
       stamp.textContent = `${safeLocation} · °${safeUnit}${Number.isNaN(generated.getTime()) ? '' : ' · ' + generated.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`;
       sources.append(stamp);
       result.hidden = false;
-      status.textContent = 'AI-generated from forecast data, not an official warning. Each question starts a new answer.';
+      status.textContent = 'AI-generated from forecast and historical data, not an official warning. Each question starts a new answer.';
     } catch (error) {
       status.classList.add('is-error');
       status.textContent = error.name === 'AbortError' ? 'The answer took too long. Please try again.' : error.message;
@@ -3242,7 +3573,15 @@ function renderActiveDashboardView() {
 // Secondary resources start on first visit and only refresh in their active view.
 const dashboardRefreshTasks = [
   {key:'readings', every:60000, load:() => loadData()},
-  {key:'weather', every:900000, load:async () => { await loadHomeLocation(); return loadWeather(); }},
+  {key:'weather', every:900000, load:async () => {
+    try {
+      await loadHomeLocation();
+      await loadWeather();
+    } finally {
+      weatherReady = true;
+      refreshDashboard();
+    }
+  }},
   {key:'local', view:'local', every:900000, load:() => {
     if (!_lastWeather?.data) return false;
     const {lat, lon, data} = _lastWeather;
@@ -3309,6 +3648,7 @@ initDashboardTabs();
 initDesktopOverview();
 initSettings();
 initWeatherQuestions();
+bindHomeHistoryPointer();
 renderHomeOverview();
 
 
@@ -3383,7 +3723,20 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
   renderHomeOverview();
   markTabSeen(activeDashboardView());
+  // A fallback forecast may be fixable now (OS location services toggled,
+  // permission granted in settings) — a retry is free until a fix arrives.
+  if (_lastWeather?.usedFallback && window.isSecureContext) reloadWeatherOnFix(requestGeoPosition());
   refreshDashboard();
   renderActiveDashboardView();
 });
+
+// Answering the permission prompt after the first request gave up should load
+// local weather immediately, not at the next 15-minute refresh.
+try {
+  navigator.permissions?.query({name:'geolocation'}).then(status => {
+    status.addEventListener('change', () => {
+      if (status.state === 'granted') reloadWeatherOnFix(requestGeoPosition());
+    });
+  }).catch(() => {});
+} catch (permissionsError) { console.warn('Permissions API unavailable', permissionsError); }
 new ResizeObserver(() => requestAnimationFrame(drawHouseConnections)).observe(elements.weather.card);

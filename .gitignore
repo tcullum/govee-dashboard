@@ -19,6 +19,8 @@ ENV/
 *_OLD.*
 *_bak.*
 backup-*/
+*.bak-*
+secrets/
 .claude/
 
 # OS files
@@ -32,6 +34,7 @@ Thumbs.db
 *.swo
 insights_cache.json
 almanac_cache.json
+almanac_history_cache.json
 govee_readings.csv
 *.log
 data/

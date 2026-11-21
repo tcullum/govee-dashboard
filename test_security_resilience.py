@@ -135,12 +135,36 @@ class ResilienceTests(unittest.TestCase):
         self.assertEqual(read_json(server.INSIGHTS_CACHE_FILE), old)
         self.assertTrue(server._insights_error)
 
-    def test_insights_expire_on_the_location_calendar_date(self):
-        now = datetime(2026, 11, 5, 0, 30, tzinfo=timezone.utc)
-        with patch.object(server, "datetime", wraps=datetime) as clock:
-            clock.now.side_effect = lambda zone: now.astimezone(zone)
-            self.assertTrue(server._insights_current({"timestamp": "2026-11-04T08:00:00-08:00"}, self.context))
-            self.assertFalse(server._insights_current({"timestamp": "2026-11-03T23:55:00-08:00"}, self.context))
+    def test_insights_reuse_recent_cache_after_small_gps_drift(self):
+        older = {**self.context, "insights": ["old"], "timestamp": "2026-11-04T08:00:00-08:00"}
+        nearby = {**self.context, "latitude": 36.1702, "insights": ["fresh"],
+                  "timestamp": "2026-11-05T08:00:00-08:00"}
+        write_json(server.INSIGHTS_CACHE_FILE, {"entries": {
+            weather_context.context_key(entry): entry for entry in (older, nearby)
+        }})
+        now = datetime.fromisoformat("2026-11-05T09:00:00-08:00")
+        with patch.object(server.time, "time", return_value=now.timestamp()), patch.object(server, "_start_insights_refresh") as start:
+            response = self.client.get("/api/almanac/insights?lat=36.1701&lon=-115.14")
+            self.assertEqual(response.json["insights"], ["fresh"])
+            self.assertFalse(response.json["stale"])
+            self.assertEqual(response.json["next_update_at"], now.timestamp() + 5 * 3600)
+            start.assert_not_called()
+        self.assertEqual(server._read_insights({**self.context, "latitude": 36.18}), {})
+
+    def test_insights_budget_reports_when_refresh_is_available(self):
+        now = time.time()
+        server._insights_attempts.extend(now - age for age in (3600, 2700, 1800, 60))
+        with patch.dict(os.environ, {"AI_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "fixture"}):
+            response = self.client.get("/api/almanac/insights?lat=36.18&lon=-115.14")
+        self.assertEqual(response.json["retry_at"], now - 3600 + 86400)
+        self.assertEqual(response.json["next_update_at"], response.json["retry_at"])
+        self.assertEqual(response.json["insights"], [])
+
+    def test_insights_interval_crosses_local_midnight(self):
+        stamp = "2026-11-04T23:55:00-08:00"
+        now = datetime.fromisoformat("2026-11-05T00:30:00-08:00").timestamp()
+        expected = datetime.fromisoformat("2026-11-05T05:55:00-08:00").timestamp()
+        self.assertEqual(server._insights_due_at({"timestamp": stamp}, now), expected)
 
     def test_pollen_failures_count_and_budget_is_persisted(self):
         with patch.dict(os.environ, {"GOOGLE_POLLEN_API_KEY": "fixture"}), patch.object(server.requests, "get", side_effect=requests.Timeout) as upstream:

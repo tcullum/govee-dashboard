@@ -2749,9 +2749,33 @@ button:focus-visible,a:focus-visible,textarea:focus-visible{outline:2px solid va
 .sky-precip{display:none;position:absolute;inset:-100% -30%;opacity:.35;animation:sky-rain 1.2s linear infinite;background:repeating-linear-gradient(105deg,transparent 0 38px,#d5e7ef80 39px,transparent 40px 72px);mask-image:repeating-linear-gradient(0deg,#000 0 15px,transparent 22px 90px)}
 .scene-rain .sky-precip,.scene-storm .sky-precip,.scene-snow .sky-precip{display:block}
 .scene-snow .sky-precip{opacity:.8;background:radial-gradient(circle,#fff 1.5px,transparent 3px) 0 0/47px 61px;mask-image:none;animation:sky-snow 14s linear infinite}
-.season-motes i{position:absolute;left:80%;top:42%;width:2px;height:2px;background:#ebd2a7;border-radius:50%;animation:leaf-float 13s linear infinite;opacity:0}
-.season-motes i:nth-child(2){left:90%;animation-delay:-3s}.season-motes i:nth-child(3){left:70%;animation-delay:-7s}.season-motes i:nth-child(4){left:84%;animation-delay:-10s}.season-motes i:nth-child(5){left:95%;animation-delay:-5s}
-#weatherCard:not([data-season=autumn]):not([data-season=spring]) .season-motes,.scene-rain .season-motes,.scene-snow .season-motes,.scene-storm .season-motes{display:none}
+/* Wind-driven leaves: visible whenever it's breezy, any season. Speed,
+   opacity and direction come from live wind via --leaf-* / --cloud-direction. */
+.wind-leaves{position:absolute;inset:0;display:none}
+#weatherCard.scene-windy .wind-leaves{display:block}
+.scene-rain .wind-leaves,.scene-snow .wind-leaves,.scene-storm .wind-leaves{display:none}
+.wind-leaves i{position:absolute;top:30%;left:-4%;width:11px;height:8px;background:linear-gradient(135deg,#d8a954,#b07c33);border-radius:0 50% 0 50%;opacity:0;animation:leaf-blow var(--leaf-speed,10s) linear infinite;animation-direction:var(--cloud-direction,normal);filter:drop-shadow(0 1px 1px #00000030)}
+.wind-leaves i:nth-child(2){top:20%;width:9px;height:6px;animation-delay:calc(var(--leaf-speed,10s)*-.22);animation-duration:calc(var(--leaf-speed,10s)*1.25);background:linear-gradient(135deg,#c98d3f,#9c6a2c)}
+.wind-leaves i:nth-child(3){top:44%;animation-delay:calc(var(--leaf-speed,10s)*-.48);animation-duration:calc(var(--leaf-speed,10s)*.85);background:linear-gradient(135deg,#cf7f3a,#a05a28)}
+.wind-leaves i:nth-child(4){top:58%;width:8px;height:6px;animation-delay:calc(var(--leaf-speed,10s)*-.66);animation-duration:calc(var(--leaf-speed,10s)*1.4);background:linear-gradient(135deg,#a8b060,#7d8a44)}
+.wind-leaves i:nth-child(5){top:36%;width:12px;height:9px;animation-delay:calc(var(--leaf-speed,10s)*-.81);animation-duration:calc(var(--leaf-speed,10s)*1.1);background:linear-gradient(135deg,#d3b063,#ab8340)}
+.wind-leaves i:nth-child(6){top:68%;width:9px;height:7px;animation-delay:calc(var(--leaf-speed,10s)*-.35);animation-duration:calc(var(--leaf-speed,10s)*1.3);background:linear-gradient(135deg,#c4913e,#96692b)}
+.wind-leaves i:nth-child(7){top:12%;width:8px;height:6px;animation-delay:calc(var(--leaf-speed,10s)*-.58);animation-duration:calc(var(--leaf-speed,10s)*.95);background:linear-gradient(135deg,#d8a954,#a3742f)}
+@keyframes leaf-blow{0%{left:-4%;transform:translateY(0) rotate(0deg);opacity:0}6%{opacity:var(--leaf-opacity,.7)}30%{transform:translateY(-16px) rotate(140deg)}55%{transform:translateY(6px) rotate(260deg)}80%{transform:translateY(-10px) rotate(380deg)}94%{opacity:var(--leaf-opacity,.7)}100%{left:104%;transform:translateY(2px) rotate(480deg);opacity:0}}
+
+/* 24-hour sensor history (replaces the illustrative house). */
+.home-history{position:relative;z-index:2;display:flex;flex-direction:column;gap:7px;min-width:0;margin-top:16px}
+.home-history-head{display:flex;justify-content:space-between;align-items:baseline;gap:4px 10px;flex-wrap:wrap}
+#weatherCard .home-history-head .section-kicker{margin:0;color:#e1ebee}
+.home-history-now{font-size:13px;color:#dfe9ec;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;padding:2px 8px;border-radius:9px;background:#08141c59;backdrop-filter:blur(3px)}
+.home-history-now b{font-weight:600}
+#homeHistoryChart{display:block;width:100%;height:200px;cursor:crosshair}
+.home-history-legend{display:flex;flex-direction:column;gap:3px}
+.hh-key{display:flex;align-items:center;gap:8px;font-size:13px;color:#e6eef0;min-width:0}
+.hh-dot{width:9px;height:9px;border-radius:50%;background:var(--hh-color,#fff);flex:none}
+.hh-name{font-weight:600;flex:none}
+.hh-range{margin-left:auto;color:#c3d2d5;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hh-range strong{color:#f4f8f5;font-weight:600}
 #weatherCard .weather-topline{align-items:flex-start;gap:12px}#weatherCard .section-kicker{color:#e1ebee;font-size:10px;letter-spacing:1.9px;font-weight:600;margin-bottom:10px}
 .season-label{display:inline-block;text-transform:uppercase;color:#f3d6ab;letter-spacing:1.4px}.season-label:not(:empty)::before{content:' / ';color:#b6c4c9;margin:0 6px}
 #weatherCard .device{font-size:clamp(24px,6cqi,34px);font-weight:500;letter-spacing:-1px;line-height:1.15;color:#fff}
@@ -2771,7 +2795,6 @@ button:focus-visible,a:focus-visible,textarea:focus-visible{outline:2px solid va
 @keyframes sky-glow{50%{transform:scale(1.04);opacity:.85}}
 @keyframes sky-rain{to{transform:translate(-24px,90px)}}
 @keyframes sky-snow{to{transform:translate(47px,122px)}}
-@keyframes leaf-float{0%{transform:translate(0,0) rotate(0);opacity:0}15%,75%{opacity:.8}100%{transform:translate(-170px,28px) rotate(40deg);opacity:0}}
 @container(max-width:360px){#weatherCard .weather-topline{flex-wrap:wrap}#weatherCard .weather-controls{position:absolute;right:0;top:58px}#weatherCard .condition-chip{font-size:10px;padding:6px 8px}#weatherCard .weather-reading{margin-top:42px}#weatherCard .temp{font-size:80px}.season-label{letter-spacing:1px}}
 @media(max-width:720px){#weatherCard{min-height:550px;padding:22px}#weatherMotion{width:44px;height:44px}#weatherCard .landscape-hills{bottom:100px}}
 @media(prefers-reduced-motion:reduce){#weatherCard .landscape *{animation:none!important}#weatherMotion{display:none}}

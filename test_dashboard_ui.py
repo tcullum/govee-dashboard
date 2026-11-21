@@ -20,7 +20,7 @@ class DashboardUITests(unittest.TestCase):
         self.page = self.context.new_page()
         self.page.route('**/api/almanac/insights*', lambda r: r.fulfill(json={'insights': [], 'cached': False}))
         self.page.goto(os.environ.get('DASHBOARD_TEST_URL', 'http://localhost:8000'), wait_until='domcontentloaded')
-        self.page.get_by_role('button', name='Ask the weather', exact=True).click()
+        self.page.get_by_role('button', name='Ask the Almanac', exact=True).click()
 
     def tearDown(self):
         self.context.close()
@@ -108,7 +108,7 @@ Both days will be **below 100°F**.
         for width in (1440,390,320):
             self.page.set_viewport_size({'width':width,'height':900})
             if not self.page.locator('dialog').evaluate('(node)=>node.open'):
-                self.page.get_by_role('button', name='Ask the weather', exact=True).click()
+                self.page.get_by_role('button', name='Ask the Almanac', exact=True).click()
             self.assertTrue(area.evaluate('(el) => el.scrollWidth <= el.clientWidth + 1'))
             self.assertEqual(area.locator('script,img,iframe,a').count(), 0)
         self.page.locator('#weatherAskResult').screenshot(path='C:/Users/Thomas/AppData/Local/hermes/cache/govee-answer-mobile.png')

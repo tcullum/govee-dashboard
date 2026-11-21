@@ -1,14 +1,19 @@
-"""Weather question API tests; only upstream HTTP and AI are mocked."""
+"""Almanac question API tests; only upstream HTTP and AI are mocked."""
 import os
 import unittest
 
 import govee_server
 
+FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+
 
 class WeatherQuestionTests(unittest.TestCase):
     def setUp(self):
         self.client = govee_server.app.test_client()
-        govee_server.app.extensions["weather_questions"]["attempts"].clear()
+        budget = govee_server.app.extensions["weather_questions"]
+        budget["attempts"].clear()
+        budget["history_cache"] = None  # keep unit tests off the production cache path
         previous = os.environ.pop("ANTHROPIC_API_KEY", None)
         def restore_key():
             os.environ.pop("ANTHROPIC_API_KEY", None)
@@ -16,22 +21,29 @@ class WeatherQuestionTests(unittest.TestCase):
                 os.environ["ANTHROPIC_API_KEY"] = previous
         self.addCleanup(restore_key)
 
+    def local_today(self, now, offset=-25200):
+        from datetime import datetime, timezone
+        return datetime.fromtimestamp(now + offset, timezone.utc).date()
+
     def upstream_fixtures(self):
-        import json
         import time
         from types import SimpleNamespace
-        from unittest.mock import Mock, patch
+        from unittest.mock import Mock
         now = int(time.time())
+        offset = -25200
+        midnight = ((now + offset) // 86400) * 86400 - offset
         forecast = {
-            "timezone": "America/Los_Angeles", "utc_offset_seconds": -25200,
+            "timezone": "America/Los_Angeles", "utc_offset_seconds": offset,
             "current": {"time": now, "temperature_2m": 84},
             "current_units": {"time": "unixtime", "temperature_2m": "°F"},
             "hourly": {"time": [now + i * 3600 for i in range(48)],
                        "temperature_2m": [84] * 48},
             "hourly_units": {"temperature_2m": "°F"},
-            "daily": {"time": [now + i * 86400 for i in range(7)],
-                      "temperature_2m_max": [90] * 7},
-            "daily_units": {"temperature_2m_max": "°F"},
+            # past_days=7 plus forecast_days=16: seven past days, then today onward.
+            "daily": {"time": [midnight + i * 86400 for i in range(-7, 16)],
+                      "temperature_2m_max": [90] * 23,
+                      "temperature_2m_min": [60] * 23},
+            "daily_units": {"temperature_2m_max": "°F", "temperature_2m_min": "°F"},
         }
         upstream = Mock(status_code=200)
         upstream.json.return_value = forecast
@@ -42,12 +54,47 @@ class WeatherQuestionTests(unittest.TestCase):
         ai.__exit__ = Mock(return_value=False)
         return upstream, ai
 
-    def test_asks_model_using_only_fresh_server_forecast(self):
+    def archive_fixture(self):
+        """30 archive days ending today-8, with a freeze at end-5 and a 30s low at end-2."""
+        import time
+        from datetime import timedelta
+        from unittest.mock import Mock
+        end = self.local_today(int(time.time())) - timedelta(days=8)
+        records = {}
+        for i in range(30):
+            records[(end - timedelta(days=29 - i)).isoformat()] = [70.0, 50.0]
+        records[(end - timedelta(days=5)).isoformat()] = [45.0, 28.0]
+        records[(end - timedelta(days=2)).isoformat()] = [55.0, 35.0]
+        dates = sorted(records)
+        upstream = Mock(status_code=200)
+        upstream.json.return_value = {"daily": {
+            "time": dates,
+            "temperature_2m_max": [records[d][0] for d in dates],
+            "temperature_2m_min": [records[d][1] for d in dates]}}
+        return upstream
+
+    def route_upstreams(self, upstream, archive):
+        def route(url, **kwargs):
+            return archive if url == ARCHIVE_URL else upstream
+        return route
+
+    def ask(self, **overrides):
+        payload = {"question": "Rain?", "latitude": 36.17, "longitude": -115.14,
+                   "unit": "F", "location": "Las Vegas"}
+        payload.update(overrides)
+        return self.client.post("/api/weather/ask", json=payload)
+
+    def test_asks_model_using_fresh_forecast_and_history(self):
         import json
+        import time
+        from datetime import timedelta
         from unittest.mock import patch
+        from weather_questions import FORECAST_SOURCE, ARCHIVE_SOURCE, HISTORY_DAYS, RECENT_DAYS
         upstream, ai = self.upstream_fixtures()
+        archive = self.archive_fixture()
         os.environ["ANTHROPIC_API_KEY"] = "test-only-not-a-real-key"
-        with patch("requests.get", return_value=upstream) as get, patch("anthropic.Anthropic", return_value=ai) as sdk:
+        with patch("requests.get", side_effect=self.route_upstreams(upstream, archive)) as get, \
+                patch("anthropic.Anthropic", return_value=ai) as sdk:
             response = self.client.post("/api/weather/ask", json={
                 "question": "Should I walk outside?", "latitude": 36.17,
                 "longitude": -115.14, "location": "Las Vegas", "unit": "F",
@@ -57,18 +104,28 @@ class WeatherQuestionTests(unittest.TestCase):
         self.assertEqual(response.json["unit"], "F")
         self.assertEqual(response.json["location"], "Las Vegas")
         self.assertTrue(response.json["generated_at"].endswith("+00:00"))
-        self.assertEqual(response.json["sources"], [{"label": "Open-Meteo forecast", "url": "https://open-meteo.com/"}])
+        self.assertEqual(response.json["sources"], [FORECAST_SOURCE, ARCHIVE_SOURCE])
         self.assertEqual(response.headers["Cache-Control"], "no-store")
         self.assertNotIn("test-only-not-a-real-key", response.get_data(as_text=True))
-        self.assertEqual(get.call_count, 1)
-        self.assertEqual(get.call_args.args[0], "https://api.open-meteo.com/v1/forecast")
-        params = get.call_args.kwargs["params"]
+        self.assertEqual(get.call_count, 2)
+        forecast_call, archive_call = get.call_args_list
+        self.assertEqual(forecast_call.args[0], FORECAST_URL)
+        params = forecast_call.kwargs["params"]
         self.assertEqual(params["latitude"], 36.17)
         self.assertEqual(params["forecast_hours"], 48)
-        self.assertEqual(params["forecast_days"], 7)
+        self.assertEqual(params["forecast_days"], 16)
+        self.assertEqual(params["past_days"], RECENT_DAYS)
         self.assertEqual(params["temperature_unit"], "fahrenheit")
-        self.assertFalse(get.call_args.kwargs["allow_redirects"])
-        self.assertLessEqual(get.call_args.kwargs["timeout"], 12)
+        self.assertFalse(forecast_call.kwargs["allow_redirects"])
+        self.assertLessEqual(forecast_call.kwargs["timeout"], 12)
+        self.assertEqual(archive_call.args[0], ARCHIVE_URL)
+        today = self.local_today(int(time.time()))
+        archive_params = archive_call.kwargs["params"]
+        self.assertEqual(archive_params["start_date"], (today - timedelta(days=HISTORY_DAYS)).isoformat())
+        self.assertEqual(archive_params["end_date"], (today - timedelta(days=RECENT_DAYS + 1)).isoformat())
+        self.assertEqual(archive_params["daily"], "temperature_2m_max,temperature_2m_min")
+        self.assertEqual(archive_params["temperature_unit"], "fahrenheit")
+        self.assertFalse(archive_call.kwargs["allow_redirects"])
         self.assertEqual(sdk.call_args.kwargs["max_retries"], 0)
         self.assertLessEqual(sdk.call_args.kwargs["timeout"], 30)
         generation = ai.messages.create.call_args.kwargs
@@ -77,12 +134,111 @@ class WeatherQuestionTests(unittest.TestCase):
         self.assertNotIn("tools", generation)
         self.assertIn("missing", generation["system"].lower())
         self.assertIn("untrusted", generation["system"].lower())
+        self.assertIn("almanac", generation["system"].lower())
         context = json.loads(generation["messages"][0]["content"])
         self.assertEqual(context["forecast"]["current"]["temperature_2m"], 84)
         self.assertEqual(len(context["forecast"]["hourly"]["time"]), 48)
-        self.assertEqual(len(context["forecast"]["daily"]["time"]), 7)
+        self.assertEqual(len(context["forecast"]["daily"]["time"]), 16)
         self.assertIn("retrieved_at", context)
         self.assertEqual(context["location"], "Las Vegas")
+        history = context["history"]
+        self.assertTrue(history["archive_available"])
+        self.assertEqual(history["units"]["temperature"], "°F")
+        self.assertEqual(history["coverage"]["end"], (today - timedelta(days=1)).isoformat())
+        self.assertTrue(history["days"])
+        self.assertIsInstance(history["milestones"], list)
+
+    def test_history_grounds_last_freezing_question(self):
+        import json
+        import time
+        from datetime import timedelta
+        from unittest.mock import patch
+        upstream, ai = self.upstream_fixtures()
+        forecast = upstream.json.return_value
+        forecast["daily"]["temperature_2m_min"][6] = 31.0  # yesterday dipped to freezing
+        archive = self.archive_fixture()
+        os.environ["ANTHROPIC_API_KEY"] = "test-only-not-a-real-key"
+        with patch("requests.get", side_effect=self.route_upstreams(upstream, archive)), \
+                patch("anthropic.Anthropic", return_value=ai):
+            response = self.ask(question="When's the last time we had freezing temperatures?")
+        self.assertEqual(response.status_code, 200)
+        context = json.loads(ai.messages.create.call_args.kwargs["messages"][0]["content"])
+        history = context["history"]
+        today = self.local_today(int(time.time()))
+        yesterday = (today - timedelta(days=1)).isoformat()
+        self.assertEqual(history["coverage"]["end"], yesterday)
+        self.assertIn([yesterday, 90.0, 31.0], history["days"])
+        freezing = next(m for m in history["milestones"]
+                        if m["record"].startswith("low") and "freezing" in m["record"])
+        self.assertEqual(freezing["last"], {"date": yesterday, "value": 31.0})
+        # The older archive freeze is still in the series, and today stays in the forecast.
+        self.assertTrue(any(day[2] == 28.0 for day in history["days"]))
+        self.assertEqual(len(context["forecast"]["daily"]["time"]), 16)
+        self.assertNotIn(yesterday, [self.local_today(t, -25200).isoformat()
+                                     for t in context["forecast"]["daily"]["time"]])
+
+    def test_archive_failure_still_answers_from_forecast(self):
+        import json
+        import time
+        from datetime import timedelta
+        from unittest.mock import Mock, patch
+        from weather_questions import FORECAST_SOURCE
+        upstream, ai = self.upstream_fixtures()
+        archive = Mock(status_code=503)
+        os.environ["ANTHROPIC_API_KEY"] = "test-only-not-a-real-key"
+        with patch("requests.get", side_effect=self.route_upstreams(upstream, archive)), \
+                patch("anthropic.Anthropic", return_value=ai):
+            response = self.ask()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["sources"], [FORECAST_SOURCE])
+        context = json.loads(ai.messages.create.call_args.kwargs["messages"][0]["content"])
+        history = context["history"]
+        self.assertFalse(history["archive_available"])
+        self.assertEqual(len(history["days"]), 7)
+        self.assertEqual(history["coverage"]["end"],
+                         (self.local_today(int(time.time())) - timedelta(days=1)).isoformat())
+
+    def test_archive_cache_is_reused_within_the_same_day(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        upstream, ai = self.upstream_fixtures()
+        archive = self.archive_fixture()
+        os.environ["ANTHROPIC_API_KEY"] = "test-only-not-a-real-key"
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = str(Path(tmp) / "history.json")
+            govee_server.app.extensions["weather_questions"]["history_cache"] = cache
+            with patch("requests.get", side_effect=self.route_upstreams(upstream, archive)) as get, \
+                    patch("anthropic.Anthropic", return_value=ai):
+                self.assertEqual(self.ask().status_code, 200)
+                self.assertEqual(self.ask().status_code, 200)
+            archive_calls = [c for c in get.call_args_list if c.args[0] == ARCHIVE_URL]
+            self.assertEqual(len(archive_calls), 1)
+            self.assertEqual(get.call_count, 3)
+            self.assertTrue(Path(cache).is_file())
+
+    def test_stale_archive_cache_survives_upstream_failure(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import Mock, patch
+        upstream, ai = self.upstream_fixtures()
+        archive = Mock(status_code=500)
+        os.environ["ANTHROPIC_API_KEY"] = "test-only-not-a-real-key"
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "history.json"
+            cache.write_text(json.dumps({"entries": {
+                "36.1700,-115.1400,F": {"date": "2000-01-01",
+                                        "payload": [["2000-01-01", 40.0, 25.0]]}}}))
+            govee_server.app.extensions["weather_questions"]["history_cache"] = str(cache)
+            with patch("requests.get", side_effect=self.route_upstreams(upstream, archive)), \
+                    patch("anthropic.Anthropic", return_value=ai):
+                response = self.ask()
+        self.assertEqual(response.status_code, 200)
+        context = json.loads(ai.messages.create.call_args.kwargs["messages"][0]["content"])
+        history = context["history"]
+        self.assertTrue(history["archive_stale"])
+        self.assertIn(["2000-01-01", 40.0, 25.0], history["days"])
 
     def test_rejects_invalid_input_before_external_calls(self):
         import json
@@ -126,7 +282,7 @@ class WeatherQuestionTests(unittest.TestCase):
         with patch("requests.get") as get, patch("anthropic.Anthropic") as sdk:
             for headers in ({"Origin": "https://evil.example"}, {"Origin": "null"},
                             {"Origin": "http://192.168.1.20:9000"},
-                            {"Origin": "http://192.168.1.20:8000@evil.example"},
+                            {"Origin": "http://192.168.1.20:***@evil.example"},
                             {"Sec-Fetch-Site": "cross-site"}, {"Sec-Fetch-Site": "same-site"},
                             {"Referer": "https://evil.example/dashboard"}):
                 with self.subTest(headers=headers):
@@ -140,11 +296,12 @@ class WeatherQuestionTests(unittest.TestCase):
     def test_configured_public_https_origin_works_behind_http_proxy(self):
         from unittest.mock import patch
         upstream, ai = self.upstream_fixtures()
+        archive = self.archive_fixture()
         payload = {"question": "Rain?", "latitude": 36.17, "longitude": -115.14,
                    "unit": "F", "location": "Las Vegas"}
         with patch.dict(os.environ, {"WEATHER_PUBLIC_ORIGIN": "https://weather.cullum.dad",
                                      "ANTHROPIC_API_KEY": "test-only-not-a-real-key"}), \
-                patch("requests.get", return_value=upstream), \
+                patch("requests.get", side_effect=self.route_upstreams(upstream, archive)), \
                 patch("anthropic.Anthropic", return_value=ai):
             for host in ("http://localhost:8000", "http://weather.cullum.dad"):
                 for headers in ({"Origin": "https://weather.cullum.dad", "Sec-Fetch-Site": "same-origin"},
@@ -160,7 +317,7 @@ class WeatherQuestionTests(unittest.TestCase):
                 patch("requests.get") as get, patch("anthropic.Anthropic") as sdk:
             for origin in ("https://evil.example", "https://weather.cullum.dad.evil.example",
                            "http://weather.cullum.dad", "https://weather.cullum.dad:8443",
-                           "https://weather.cullum.dad@evil.example", "null"):
+                           "https://weathe....dad@evil.example", "null"):
                 response = self.client.post("/api/weather/ask", json={}, headers={
                     "Origin": origin, "X-Forwarded-Proto": "https", "X-Forwarded-Host": "evil.example"})
                 self.assertEqual(response.status_code, 403, origin)
@@ -226,13 +383,13 @@ class WeatherQuestionTests(unittest.TestCase):
         from unittest.mock import Mock, patch
         os.environ["ANTHROPIC_API_KEY"] = "test-only-not-a-real-key"
         upstream, ai = self.upstream_fixtures()
+        archive = self.archive_fixture()
         ai.messages.create.side_effect = anthropic.BadRequestError(
             "Your credit balance is too low to access the Anthropic API.",
             response=Mock(status_code=400), body={})
-        with patch("requests.get", return_value=upstream), patch("anthropic.Anthropic", return_value=ai):
-            response = self.client.post("/api/weather/ask", json={
-                "question": "Rain?", "latitude": 36.17, "longitude": -115.14,
-                "unit": "F", "location": "Las Vegas"})
+        with patch("requests.get", side_effect=self.route_upstreams(upstream, archive)), \
+                patch("anthropic.Anthropic", return_value=ai):
+            response = self.ask()
         self.assertEqual(response.status_code, 503)
         self.assertIn("credit", response.json["error"].lower())
         self.assertNotIn("Your credit balance is too low", response.get_data(as_text=True))
@@ -254,11 +411,12 @@ class WeatherQuestionTests(unittest.TestCase):
                     (RuntimeError("private-secret"), 502)]
         for failure, status in failures:
             upstream, ai = self.upstream_fixtures()
+            archive = self.archive_fixture()
             ai.messages.create.side_effect = failure
-            with self.subTest(kind=type(failure).__name__), patch("requests.get", return_value=upstream), patch("anthropic.Anthropic", return_value=ai):
-                response = self.client.post("/api/weather/ask", json={
-                    "question": "Rain?", "latitude": 36.17, "longitude": -115.14,
-                    "unit": "F", "location": "Las Vegas"})
+            with self.subTest(kind=type(failure).__name__), \
+                    patch("requests.get", side_effect=self.route_upstreams(upstream, archive)), \
+                    patch("anthropic.Anthropic", return_value=ai):
+                response = self.ask()
                 self.assertEqual(response.status_code, status)
                 self.assertIn("error", response.json)
                 self.assertNotIn("private-secret", response.get_data(as_text=True))
@@ -268,7 +426,9 @@ class WeatherQuestionTests(unittest.TestCase):
         from unittest.mock import patch
         os.environ["ANTHROPIC_API_KEY"] = "test-only-not-a-real-key"
         upstream, ai = self.upstream_fixtures()
-        with patch("requests.get", return_value=upstream) as get, patch("anthropic.Anthropic", return_value=ai):
+        archive = self.archive_fixture()
+        with patch("requests.get", side_effect=self.route_upstreams(upstream, archive)) as get, \
+                patch("anthropic.Anthropic", return_value=ai):
             for index in range(11):
                 response = self.client.post("/api/weather/ask", json={
                     "question": "Rain?", "latitude": 36.17, "longitude": -115.14,
@@ -277,7 +437,7 @@ class WeatherQuestionTests(unittest.TestCase):
             self.assertEqual(response.status_code, 429)
             self.assertIn("error", response.json)
             self.assertGreater(int(response.headers["Retry-After"]), 0)
-            self.assertLessEqual(get.call_count, 10)
+            self.assertLessEqual(get.call_count, 20)
             self.assertLessEqual(ai.messages.create.call_count, 10)
 
     def test_only_one_question_runs_at_a_time_and_slot_releases(self):
@@ -285,6 +445,7 @@ class WeatherQuestionTests(unittest.TestCase):
         from unittest.mock import patch
         os.environ["ANTHROPIC_API_KEY"] = "test-only-not-a-real-key"
         upstream, ai = self.upstream_fixtures()
+        archive = self.archive_fixture()
         started, release = threading.Event(), threading.Event()
         answer = ai.messages.create.return_value
         def slow_ai(**kwargs):
@@ -298,7 +459,8 @@ class WeatherQuestionTests(unittest.TestCase):
         def first_request():
             with govee_server.app.test_client() as client:
                 completed.append(client.post("/api/weather/ask", json=payload).status_code)
-        with patch("requests.get", return_value=upstream) as get, patch("anthropic.Anthropic", return_value=ai):
+        with patch("requests.get", side_effect=self.route_upstreams(upstream, archive)) as get, \
+                patch("anthropic.Anthropic", return_value=ai):
             worker = threading.Thread(target=first_request)
             worker.start()
             try:
@@ -306,7 +468,7 @@ class WeatherQuestionTests(unittest.TestCase):
                 second = self.client.post("/api/weather/ask", json=payload)
                 self.assertEqual(second.status_code, 429)
                 self.assertIn("busy", second.json["error"].lower())
-                self.assertEqual(get.call_count, 1)
+                self.assertEqual(get.call_count, 2)
             finally:
                 release.set()
                 worker.join(6)
@@ -322,11 +484,12 @@ class WeatherQuestionTests(unittest.TestCase):
                                ([SimpleNamespace(type="tool_use", name="secret_action")], "tool_use"),
                                ([SimpleNamespace(type="text", text="partial")], "max_tokens")):
             upstream, ai = self.upstream_fixtures()
+            archive = self.archive_fixture()
             ai.messages.create.return_value = SimpleNamespace(content=blocks, stop_reason=reason)
-            with self.subTest(reason=reason), patch("requests.get", return_value=upstream), patch("anthropic.Anthropic", return_value=ai):
-                response = self.client.post("/api/weather/ask", json={
-                    "question": "Rain?", "latitude": 36.17, "longitude": -115.14,
-                    "unit": "F", "location": "Las Vegas"})
+            with self.subTest(reason=reason), \
+                    patch("requests.get", side_effect=self.route_upstreams(upstream, archive)), \
+                    patch("anthropic.Anthropic", return_value=ai):
+                response = self.ask()
                 self.assertEqual(response.status_code, 502)
                 self.assertIn("error", response.json)
 
@@ -335,6 +498,7 @@ class WeatherQuestionTests(unittest.TestCase):
         from unittest.mock import patch
         os.environ["ANTHROPIC_API_KEY"] = "test-only-not-a-real-key"
         upstream, ai = self.upstream_fixtures()
+        archive = self.archive_fixture()
         forecast = upstream.json.return_value
         forecast["unexpected"] = "untrusted-extra" * 10000
         for section, length in (("hourly", 100), ("daily", 30)):
@@ -343,7 +507,8 @@ class WeatherQuestionTests(unittest.TestCase):
             forecast[section]["time"] = [base + i * step for i in range(length)]
             forecast[section]["temperature_2m" if section == "hourly" else "temperature_2m_max"] = [None] * length
         forecast["current_units"]["temperature_2m"] = "°C"
-        with patch("requests.get", return_value=upstream) as get, patch("anthropic.Anthropic", return_value=ai):
+        with patch("requests.get", side_effect=self.route_upstreams(upstream, archive)) as get, \
+                patch("anthropic.Anthropic", return_value=ai):
             response = self.client.post("/api/weather/ask", json={
                 "question": "Rain?", "latitude": 36.17, "longitude": -115.14,
                 "unit": "C", "location": " Las Vegas "},
@@ -355,8 +520,9 @@ class WeatherQuestionTests(unittest.TestCase):
         context = json.loads(ai.messages.create.call_args.kwargs["messages"][0]["content"])
         self.assertNotIn("unexpected", context["forecast"])
         self.assertEqual(len(context["forecast"]["hourly"]["time"]), 48)
-        self.assertEqual(len(context["forecast"]["daily"]["time"]), 7)
+        self.assertEqual(len(context["forecast"]["daily"]["time"]), 16)
         self.assertIsNone(context["forecast"]["hourly"]["temperature_2m"][0])
+        self.assertEqual(context["history"]["units"]["temperature"], "°C")
         self.assertLess(len(json.dumps(context)), 40000)
 
     def test_redirected_forecast_is_not_used(self):
@@ -365,9 +531,7 @@ class WeatherQuestionTests(unittest.TestCase):
         upstream, _ = self.upstream_fixtures()
         upstream.status_code = 302
         with patch("requests.get", return_value=upstream), patch("anthropic.Anthropic") as sdk:
-            response = self.client.post("/api/weather/ask", json={
-                "question": "Rain?", "latitude": 36.17, "longitude": -115.14,
-                "unit": "F", "location": "Las Vegas"})
+            response = self.ask()
         self.assertEqual(response.status_code, 502)
         sdk.assert_not_called()
 

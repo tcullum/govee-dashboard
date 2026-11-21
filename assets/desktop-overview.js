@@ -15,7 +15,7 @@ function initDesktopOverview() {
   const nav = document.createElement('nav');
   nav.className = 'desktop-nav';
   nav.setAttribute('aria-label', 'Explore weather');
-  nav.innerHTML = '<button class="btn" type="button" data-detail="interesting">US weather</button><button class="btn" type="button" data-detail="ai">Ask the weather</button>';
+  nav.innerHTML = '<button class="btn" type="button" data-detail="interesting">US weather</button><button class="btn" type="button" data-detail="ai">Ask the Almanac</button>';
   document.querySelector('.app-footer .controls').prepend(nav);
 
   const dialog = document.createElement('dialog');

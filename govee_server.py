@@ -34,7 +34,7 @@ DATA_DIR = os.environ.get("GOVEE_DATA_DIR", HERE)
 LOG_PATH = os.path.join(DATA_DIR, "govee_readings.csv")
 ALMANAC_CACHE_FILE = os.path.join(DATA_DIR, "almanac_cache.json")
 INSIGHTS_CACHE_FILE = os.path.join(DATA_DIR, "insights_cache.json")
-INSIGHTS_CACHE_HOURS = 24  # Cache for 24 hours so insights refresh daily
+INSIGHTS_UPDATE_SECONDS = 6 * 3600
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 READINGS_REFRESH_SECONDS = 45
 HOME_LATITUDE = float(os.environ.get("HOME_LATITUDE", "36.17"))
@@ -69,6 +69,7 @@ _device_cache_time = 0.0
 _device_cache_lock = threading.Lock()
 _pollen_cache: Dict[str, Dict[str, Any]] = {}
 _pollen_budget_path = os.path.join(DATA_DIR, "pollen_budget.json")
+_pollen_disk_cache_path = os.path.join(DATA_DIR, "pollen_cache.json")
 _pollen_request_times = deque(read_json(_pollen_budget_path, []))
 _pollen_inflight = set()
 _pollen_client_requests: Dict[str, deque] = {}
@@ -91,7 +92,7 @@ def api_config():
                     "timezone": HOME_TIMEZONE, "name": HOME_NAME})
 
 from weather_questions import register_weather_questions
-register_weather_questions(app, ANTHROPIC_MODEL)
+register_weather_questions(app, ANTHROPIC_MODEL, os.path.join(DATA_DIR, "almanac_history_cache.json"))
 
 # Only these files are served from the project root. The previous catch-all
 # route exposed .env, the readings CSV, and server source to anyone on the
@@ -224,6 +225,16 @@ def api_pollen():
         if not _check_pollen_client_rate_limit(request.remote_addr or "unknown", now):
             return jsonify({"error": "Too many pollen requests. Try again shortly."}), 429
         cached = _pollen_cache.get(key)
+        if not (cached and now - cached["timestamp"] < POLLEN_CACHE_SECONDS):
+            try:
+                with open(_pollen_disk_cache_path, encoding="utf-8") as fh:
+                    disk = json.load(fh)
+                entry = disk.get(str(key))
+                if entry and now - entry["timestamp"] < POLLEN_CACHE_SECONDS:
+                    cached = entry
+                    _pollen_cache[key] = entry
+            except (OSError, ValueError, TypeError):
+                pass
         if cached and now - cached["timestamp"] < POLLEN_CACHE_SECONDS:
             return jsonify({**cached["payload"], "cached": True})
         if key in _pollen_inflight:
@@ -257,6 +268,18 @@ def api_pollen():
             if key not in _pollen_cache and len(_pollen_cache) >= 8:
                 del _pollen_cache[min(_pollen_cache, key=lambda item: _pollen_cache[item]["timestamp"])]
             _pollen_cache[key] = {"timestamp": now, "payload": payload}
+            try:
+                disk = {}
+                try:
+                    with open(_pollen_disk_cache_path, encoding="utf-8") as fh:
+                        disk = json.load(fh)
+                except (OSError, ValueError):
+                    pass
+                disk[str(key)] = {"timestamp": now, "payload": payload}
+                with open(_pollen_disk_cache_path, "w", encoding="utf-8") as fh:
+                    json.dump(disk, fh)
+            except OSError:
+                pass
         return jsonify({**payload, "cached": False})
     except (requests.RequestException, TypeError, ValueError, KeyError):
         log("Google Pollen API request failed")
@@ -799,6 +822,74 @@ def _request_location():
     return location_context(request.args, HOME_LATITUDE, HOME_LONGITUDE, HOME_TIMEZONE)
 
 
+# ---------------------------------------------------------------------
+# Local forecast proxy: keeps browser traffic same-origin (off the VPN
+# path), with a 10-minute cache, retries, and stale-on-failure fallback.
+# The retry budget stays under the browser's 30s abort, and an expired
+# cache entry is served immediately on the first upstream failure so a
+# brief Open-Meteo hiccup never blanks the forecast panels.
+# ---------------------------------------------------------------------
+FORECAST_CACHE_SECONDS = 600
+_forecast_cache = {}
+_forecast_lock = threading.Lock()
+
+@app.get("/api/forecast")
+def api_forecast():
+    started = time.time()
+    try:
+        lat = float(request.args.get("lat", ""))
+        lon = float(request.args.get("lon", ""))
+    except (TypeError, ValueError):
+        return jsonify({"error": "lat and lon are required numbers"}), 400
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return jsonify({"error": "lat/lon out of range"}), 400
+    key = (round(lat, 2), round(lon, 2))
+    now = time.time()
+    with _forecast_lock:
+        entry = _forecast_cache.get(key)
+    if entry and now - entry["ts"] < FORECAST_CACHE_SECONDS:
+        resp = jsonify(entry["data"])
+        resp.headers["X-Forecast-Cache"] = "hit"
+        return resp
+    params = {
+        "latitude": lat, "longitude": lon,
+        "current": "is_day,temperature_2m,relative_humidity_2m,weathercode,wind_speed_10m,wind_direction_10m,wind_gusts_10m",
+        "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode,sunrise,sunset,apparent_temperature_max,apparent_temperature_min,uv_index_max,wind_speed_10m_max,wind_gusts_10m_max,precipitation_sum",
+        "hourly": "temperature_2m,precipitation_probability,weathercode,uv_index",
+        "temperature_unit": "fahrenheit", "windspeed_unit": "mph",
+        "precipitation_unit": "inch", "forecast_days": 11, "timezone": "auto",
+    }
+    last_err = None
+    for attempt in range(3):
+        try:
+            r = requests.get("https://api.open-meteo.com/v1/forecast", params=params, timeout=(3, 4))
+            r.raise_for_status()
+            data = r.json()
+            if not isinstance(data, dict) or "daily" not in data:
+                raise ValueError("unexpected forecast payload")
+            with _forecast_lock:
+                for k in [k for k, v in _forecast_cache.items() if now - v["ts"] > 3600]:
+                    _forecast_cache.pop(k, None)
+                _forecast_cache[key] = {"ts": time.time(), "data": data}
+            log(f"Forecast {key} fetched on attempt {attempt + 1} in {time.time() - started:.1f}s")
+            resp = jsonify(data)
+            resp.headers["X-Forecast-Cache"] = "miss"
+            return resp
+        except Exception as exc:
+            last_err = exc
+            log(f"Forecast attempt {attempt + 1} for {key} failed: {type(exc).__name__}: {exc}")
+            if entry:
+                age = int(time.time() - entry["ts"])
+                log(f"Forecast {key} serving stale ({age}s old) after upstream failure")
+                resp = jsonify(entry["data"])
+                resp.headers["X-Forecast-Cache"] = "stale"
+                resp.headers["X-Forecast-Age-Seconds"] = str(age)
+                return resp
+            if attempt < 2:
+                time.sleep(0.5 * (attempt + 1))
+    log(f"Forecast {key} unavailable after 3 attempts: {type(last_err).__name__}: {last_err}")
+    return jsonify({"error": "Forecast temporarily unavailable"}), 502
+
 @app.get("/api/almanac")
 def api_almanac():
     try:
@@ -815,17 +906,26 @@ _insights_attempts = deque(read_json(_insights_budget_path, []))
 
 
 def _read_insights(context):
-    return read_json(INSIGHTS_CACHE_FILE, {}).get("entries", {}).get(context_key(context), {})
+    entries = read_json(INSIGHTS_CACHE_FILE, {}).get("entries", {})
+    # A small GPS drift should reuse recent insights for the same area.
+    exact = entries.get(context_key(context), {})
+    candidates = [entry for entry in entries.values()
+                  if entry.get("timezone") == context["timezone"]
+                  and abs(entry["latitude"] - context["latitude"]) <= 0.0005
+                  and abs(entry["longitude"] - context["longitude"]) <= 0.0005]
+    if exact:
+        candidates.append(exact)
+    return max(candidates, key=lambda entry: entry.get("timestamp", ""), default={})
 
 
-def _insights_current(cached, context):
+def _insights_due_at(cached, now):
     try:
         stamp = datetime.fromisoformat(cached["timestamp"])
-        now = datetime.now(ZoneInfo(context["timezone"]))
-        return (stamp.tzinfo is not None and stamp.astimezone(now.tzinfo).date() == now.date()
-                and 0 <= (now - stamp).total_seconds() < INSIGHTS_CACHE_HOURS * 3600)
+        if stamp.tzinfo is not None and stamp.timestamp() <= now:
+            return stamp.timestamp() + INSIGHTS_UPDATE_SECONDS
     except (ValueError, TypeError, KeyError):
-        return False
+        pass
+    return 0
 
 
 def _generate_insights(context):
@@ -970,6 +1070,13 @@ def _refresh_insights(context):
             _insights_active = False
 
 
+def _insights_budget_available_at():
+    # Caller holds the insights lock.
+    daily = _insights_attempts[-4] + 86400 if len(_insights_attempts) >= 4 else 0
+    cooldown = _insights_attempts[-1] + 900 if _insights_attempts else 0
+    return max(daily, cooldown)
+
+
 def _start_insights_refresh(context):
     global _insights_active, _insights_error
     with _insights_lock:
@@ -978,13 +1085,15 @@ def _start_insights_refresh(context):
             _insights_attempts.popleft()
         if _insights_active:
             return
-        if len(_insights_attempts) >= 4 or (_insights_attempts and now - _insights_attempts[-1] < 900):
-            _insights_error = "Insights refresh limit reached; showing the last available insights."
-            return
+        available_at = _insights_budget_available_at()
+        if available_at > now:
+            _insights_error = "AI insights refresh is temporarily limited."
+            return available_at
         _insights_attempts.append(now)
         try:
             write_json(_insights_budget_path, list(_insights_attempts))
         except OSError:
+            _insights_attempts.pop()
             _insights_error = "Could not reserve the insights request budget."
             return
         _insights_active = True
@@ -1003,16 +1112,23 @@ def api_almanac_insights():
     except DataUnavailable as exc:
         return jsonify({"error": str(exc)}), exc.status
     cached = _read_insights(context)
-    current = _insights_current(cached, context)
+    now = time.time()
+    due_at = _insights_due_at(cached, now)
+    current = due_at > now
+    retry_at = None
     if request.method == "POST" or not current:
         if not (openrouter_ai.api_key() if openrouter_ai.enabled() else os.environ.get("ANTHROPIC_API_KEY")):
             return jsonify({"error": "AI provider API key is not configured"}), 503
-        _start_insights_refresh(context)
+        retry_at = _start_insights_refresh(context)
     with _insights_lock:
         refreshing, error = _insights_active, _insights_error
+        next_update_at = max(due_at, _insights_budget_available_at())
+        if current and request.method == "GET":
+            error = None
     return jsonify({**cached, "insights": cached.get("insights", []), "cached": bool(cached),
                     "stale": bool(cached) and not current, "refreshing": refreshing,
-                    "last_error": error}), 202 if refreshing and not cached else 200
+                    "last_error": error, "retry_at": retry_at, "timezone": context["timezone"],
+                    "next_update_at": next_update_at if next_update_at > now else None}), 202 if refreshing and not cached else 200
 
 # ---------------------------------------------------------------------
 # RUN SERVER

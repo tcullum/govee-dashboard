@@ -28,7 +28,8 @@ class HouseAtmosphereTests(unittest.TestCase):
             self.assertEqual(page.locator('.house-sensor').count(), 3)
             self.assertEqual(page.locator('#houseConnectors path').count(), 0, "Overview uses direct sensor cards rather than connector lines")
             self.assertEqual(page.locator('#roofToggle,.house-roof,.sensor-column,.sensor-card').count(),0)
-            self.assertEqual(page.locator('.house-interior').evaluate('(e)=>getComputedStyle(e).opacity'),'1')
+            self.assertEqual(page.locator('.house-art').count(), 0, "Illustrative house replaced by the 24h history chart")
+            self.assertEqual(page.locator('#homeHistoryChart').count(), 1)
             self.assertIn('Living Room', page.locator('.house-sensor[data-position=living]').inner_text())
             for width in (1440,1024,768,390,375,320):
                 page.set_viewport_size({'width':width,'height':1200})

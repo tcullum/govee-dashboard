@@ -84,7 +84,7 @@ class DesktopOverviewTests(unittest.TestCase):
             self.assertTrue(self.page.locator('dialog').evaluate('(node)=>node.open'))
             self.page.keyboard.press('Escape')
             self.page.wait_for_function('() => !document.querySelector("dialog").open && document.activeElement.classList.contains("desktop-summary")')
-        self.page.get_by_role('button', name='Ask the weather', exact=True).click()
+        self.page.get_by_role('button', name='Ask the Almanac', exact=True).click()
         self.assertTrue(self.page.locator('#weatherQuestion').is_visible())
         self.page.route('**/api/weather/ask', lambda route: route.fulfill(json={'answer':'Fixture: no rain expected.', 'sources':[]}))
         self.page.locator('#weatherQuestion').fill('Will it rain?')
@@ -98,7 +98,7 @@ class DesktopOverviewTests(unittest.TestCase):
         self.assertEqual(self.page.locator('#weatherCard').count(), 1)
 
     def test_overview_adapts_between_mobile_and_desktop(self):
-        self.page.get_by_role('button', name='Ask the weather', exact=True).click()
+        self.page.get_by_role('button', name='Ask the Almanac', exact=True).click()
         for width in [390,320,1440,768,1440]:
             self.page.set_viewport_size({'width':width,'height':900})
             self.settle_layout()

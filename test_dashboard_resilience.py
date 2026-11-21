@@ -78,6 +78,29 @@ class DashboardResilienceTests(unittest.TestCase):
         self.assertIn("lon=-122.3", captured[0][1])
         self.assertIn("Preparing", self.page.locator("#aiInsights").text_content())
 
+    def test_late_location_fix_reloads_forecast_without_waiting(self):
+        # A permission prompt answered after the first attempt gave up (the
+        # macOS login flow) must reload the forecast for the real coordinates
+        # instead of leaving the default location up for 15 minutes.
+        with self.browser.new_context(service_workers="block", reduced_motion="reduce") as context:
+            page = context.new_page()
+            forecasts = []
+            context.route("https://**/*", lambda route: route.abort())
+            context.route("**/api/**", lambda route: route.fulfill(json={"items": [], "series": {}, "insights": []}))
+            page.on("request", lambda req: forecasts.append(req.url) if "api.open-meteo.com" in req.url else None)
+            page.add_init_script(
+                "navigator.geolocation.getCurrentPosition = ok =>"
+                " setTimeout(() => ok({coords: {latitude: 40.7, longitude: -74.0}}), 6000)"
+            )
+            page.goto(os.environ.get("DASHBOARD_TEST_URL", "http://localhost:8000"), wait_until="domcontentloaded")
+            for _ in range(30):  # wait_for_timeout also pumps the request events
+                if any("latitude=40.7" in url for url in forecasts):
+                    break
+                page.wait_for_timeout(500)
+            self.assertTrue(any("latitude=36.17" in url for url in forecasts), forecasts)
+            self.assertIn("latitude=36.17", forecasts[0])
+            self.assertTrue(any("latitude=40.7" in url for url in forecasts), forecasts)
+
     def test_offline_shell_loads_versioned_scripts_and_overview_styles(self):
         # A separate context enables the real service worker; no API responses are cached.
         with self.browser.new_context(service_workers="allow", reduced_motion="reduce") as context:

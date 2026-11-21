@@ -16,6 +16,9 @@ COPY govee_server.py weather_questions.py openrouter_ai.py runtime_storage.py cl
 COPY index.html app.js style.css service-worker.js manifest.json favicon.ico favicon-16x16.png favicon-32x32.png /app/
 COPY assets/ /app/assets/
 COPY favicon/ /app/favicon/
+# COPY preserves build-context permissions, which may not be world-readable
+# when the context comes from an SMB share; normalize so uid 10001 can read.
+RUN chmod -R a+rX /app
 RUN groupadd --gid 10001 dashboard && useradd --uid 10001 --gid dashboard --no-create-home dashboard && \
     mkdir /data && chown dashboard:dashboard /data
 USER dashboard

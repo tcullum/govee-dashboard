@@ -22,6 +22,7 @@ def register_access(app):
             return None
         token = request.headers.get("Cf-Access-Jwt-Assertion", "")
         if not token or len(token) > 16384:
+            print(f"[ACCESS] 401 missing-token {request.path}", flush=True)
             return jsonify({"error": "Sign in through the dashboard's Cloudflare Access URL."}), 401
         try:
             key = keys.get_signing_key_from_jwt(token).key
@@ -29,6 +30,7 @@ def register_access(app):
                                 issuer=issuer, options={"require": ["exp", "iat", "iss", "aud", "sub", "email"]})
             if claims.get("type") != "app" or not claims.get("email"):
                 raise jwt.InvalidTokenError("A user application token is required")
-        except (jwt.PyJWTError, OSError, ValueError):
+        except (jwt.PyJWTError, OSError, ValueError) as exc:
+            print(f"[ACCESS] 401 invalid-token {request.path} ({type(exc).__name__})", flush=True)
             return jsonify({"error": "Cloudflare Access authentication is required."}), 401
         return None

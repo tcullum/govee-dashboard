@@ -14,9 +14,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
-  <link rel="stylesheet" href="style.css?v=6.31">
+  <link rel="stylesheet" href="style.css?v=6.40">
   <link rel="stylesheet" href="assets/dashboard-tabs.css?v=6.34">
-  <link rel="stylesheet" href="assets/desktop-overview.css?v=6.37">
+  <link rel="stylesheet" href="assets/desktop-overview.css?v=6.40">
 </head>
 
 <body>
@@ -49,58 +49,22 @@
         <div class="landscape" aria-hidden="true">
           <div class="sky-stars"></div><div class="sky-orb"></div>
           <div class="sky-cloud cloud-one"></div><div class="sky-cloud cloud-two"></div>
-          <svg class="house-art" viewBox="0 0 900 570" role="presentation">
-            <defs>
-              <linearGradient id="houseRoof" x2="0.8" y2="1"><stop stop-color="#dfa477"/><stop offset="1" stop-color="#af7259"/></linearGradient>
-              <linearGradient id="houseGlass" x2="1" y2="1"><stop stop-color="#b5dce0"/><stop offset="1" stop-color="#629aa6"/></linearGradient>
-              <pattern id="roofTiles" width="42" height="28" patternUnits="userSpaceOnUse" patternTransform="rotate(28)"><path d="M0 0H42V28" fill="none" stroke="#855841" stroke-opacity=".25"/></pattern>
-              <filter id="houseShadow"><feGaussianBlur stdDeviation="15"/></filter>
-              <g id="houseTree"><path d="M0 0v-84" stroke="#73644a" stroke-width="9"/><ellipse cy="-102" rx="30" ry="44" fill="#658970"/><ellipse cx="-7" cy="-119" rx="23" ry="31" fill="#8cae85"/><ellipse cx="8" cy="-127" rx="16" ry="23" fill="#a3bb91"/></g>
-            </defs>
-            <path d="M15 315 155 175 275 300 375 200 530 325 704 168 890 338" fill="#80a9a0" opacity=".09"/>
-            <ellipse cx="460" cy="464" rx="295" ry="58" fill="#081f24" opacity=".45" filter="url(#houseShadow)"/>
-            <path d="m125 333 362-184 325 184-361 187Z" fill="#8eaa8c"/>
-            <path d="m125 333 326 187v19L125 352Z" fill="#607f71"/><path d="m451 520 361-187v19L451 539Z" fill="#496d64"/>
-            <path d="m148 333 339-170 302 170-338 174Z" fill="#a9b799"/>
-            <g id="housePool" transform="translate(0 44)"><path d="m603 288 91-45 76 44-91 46Z" fill="#e3d5b7"/><path d="m615 288 79-38 63 37-79 38Z" fill="#76abb4"/></g>
-            <use id="rearHouseTree" href="#houseTree" x="405" y="215"/>
-            <path d="m295 250 185 105v100L295 350Z" fill="#ead9b4"/><path d="m480 455 174-91V260l-174 95Z" fill="#c4b38c"/>
-            <path d="m286 347 194 112v15L286 362Z" fill="#ab9978"/><path d="m480 459 184-95v15l-184 95Z" fill="#948567"/>
-            <path d="m322 260 56 32v66l-56-32Z" fill="url(#houseGlass)" stroke="#f7e9cc" stroke-width="8"/><path d="m349 278 0 63" stroke="#efdfbd" stroke-width="4"/>
-            <path d="m515 337 94-48v65l-94 49Z" fill="url(#houseGlass)" stroke="#e3d7b6" stroke-width="8"/><path d="m561 314 0 64" stroke="#e3d7b6" stroke-width="4"/>
-            <path d="m413 330 42 24v62l-42-25Z" fill="#67786b"/><circle cx="445" cy="385" r="2.5" fill="#e7d8b6"/>
-            <g class="house-interior">
-              <path d="m272 234 211-110 194 115-198 105Z" fill="#d1c2a2" stroke="#f2dfbb" stroke-width="5"/>
-              <path d="m483 124 0 108 100 61M483 232l-106 56" fill="none" stroke="#f0e0bd" stroke-width="10" stroke-linejoin="round"/>
-              <path d="m294 237 84-43 75 43-79 42Z" fill="#9caa90"/>
-              <path d="m312 229 41-21 28 16-40 21Z" fill="#52766c" stroke="#3f6058" stroke-width="3"/>
-              <path d="m309 225 0 15 34 20v-15Z" fill="#668b7d"/><path d="m343 245 41-21v14l-41 22Z" fill="#496f64"/>
-              <path d="m397 247 27-14 21 13-26 14Z" fill="#c49d73"/>
-              <path d="m525 211 51-26 42 26-51 27Z" fill="#a77f59" stroke="#e2c9a3" stroke-width="3"/>
-              <path d="m556 192 22-11v21l-22 11Z" fill="#335e69" stroke="#d4ded1" stroke-width="3"/>
-              <path d="m554 245 17-9 15 9-17 9Z" fill="#577a6d"/>
-              <text x="396" y="220" text-anchor="middle" fill="#28473f" font-size="15" font-weight="600">Living room</text>
-              <text x="579" y="265" text-anchor="middle" fill="#28473f" font-size="15" font-weight="600">Office</text>
-            </g>
-
-            <g stroke="#e4dcb8" stroke-width="4" fill="none" opacity=".65"><path d="m181 313 0-29m0 17 142-73m-91 47v-28m50 3v-28M674 249l91 52v-25m-45 1v-27"/></g>
-            <use href="#houseTree" x="234" y="355"/><use href="#houseTree" x="780" y="345"/>
-            <g fill="#789877"><ellipse cx="280" cy="379" rx="22" ry="13"/><ellipse cx="311" cy="395" rx="19" ry="11"/><ellipse cx="638" cy="377" rx="22" ry="13"/></g>
-            <path d="M186 361v-42m0 21h-12v-17m12 29h12v-19" fill="none" stroke="#64866b" stroke-width="7" stroke-linecap="round"/>
-            <g class="house-pin" data-house-anchor="living"><circle cx="349" cy="307" r="11"/><circle cx="349" cy="307" r="4"/><text class="pin-number" x="349" y="307">1</text></g>
-            <g class="house-pin" data-house-anchor="office"><circle cx="561" cy="346" r="11"/><circle cx="561" cy="346" r="4"/><text class="pin-number" x="561" y="346">2</text></g>
-            <g class="house-pin outside-pin" data-house-anchor="outside"><circle cx="694" cy="287" r="11"/><circle cx="694" cy="287" r="4"/><text class="pin-number" x="694" y="287">3</text></g>
-          </svg>
-          <div class="season-motes"><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="wind-leaves"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
           <div class="sky-precip"></div>
         </div>
         <button type="button" id="weatherMoon" class="weather-moon" hidden aria-label="Moon phase" aria-expanded="false" aria-describedby="moonPhaseTooltip">
           <svg viewBox="0 0 100 100" aria-hidden="true"><g id="moonDisc"><circle cx="50" cy="50" r="46" fill="#24344a"/><path id="moonLitShape" fill="#e9eef0"/></g></svg>
           <span class="moon-tooltip" id="moonPhaseTooltip" role="tooltip"><strong id="moonPhaseLabel"></strong><span>Above the local horizon<br>Clouds or terrain may obscure it</span></span>
         </button>
-        <svg class="house-connectors" id="houseConnectors" aria-hidden="true"></svg>
-        <div class="house-sensors" id="houseSensors" aria-label="Sensors around your home"></div>
-        <div class="house-scene-footer"><span>Illustrative home &middot; live room and backyard readings</span></div>
+        <section class="home-history" aria-label="Sensor temperature history, last 24 hours">
+          <div class="home-history-head">
+            <span class="section-kicker">Last 24 hours</span>
+            <span class="home-history-now" id="homeHistoryReadout"></span>
+          </div>
+          <canvas id="homeHistoryChart" role="img" aria-label="Temperature history for the last 24 hours"></canvas>
+          <div class="home-history-legend" id="homeHistoryLegend"></div>
+        </section>
+        <div class="house-sensors" id="houseSensors" aria-label="Current sensor readings"></div>
         <svg class="sun-connector" id="sunConnector" aria-hidden="true"></svg>
         <div class="sun-uv" id="sunUv" role="group" aria-label="UV index hourly forecast">
           <span>UV index</span><strong id="sunUvValue">—</strong><small id="sunUvLevel">Unavailable</small>
@@ -270,27 +234,28 @@
       <div class="ask-heading">
         <div>
           <div class="section-kicker">Your weather, explained</div>
-          <h2 id="weatherAskTitle">Ask the weather</h2>
+          <h2 id="weatherAskTitle">Ask the Almanac</h2>
         </div>
         <svg class="ask-orbit" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="14"/><path d="M20 7v26M7 20h26"/><circle cx="20" cy="20" r="5"/></svg>
       </div>
-      <p class="ask-description">Plan the day with an answer grounded in your local forecast.</p>
-      <div class="ask-suggestions" aria-label="Suggested weather questions">
+      <p class="ask-description">Answers grounded in your local forecast plus 13 months of daily temperature records.</p>
+      <div class="ask-suggestions" aria-label="Suggested almanac questions">
+        <button type="button" data-weather-question="When can I expect temperatures in the 30s?">When will temps hit the 30s?</button>
+        <button type="button" data-weather-question="When's the last time we had freezing temperatures?">Last freezing temps?</button>
         <button type="button" data-weather-question="Will I need an umbrella tomorrow?">Umbrella tomorrow?</button>
         <button type="button" data-weather-question="When is the coolest time for a walk in the next 24 hours?">Best time for a walk?</button>
-        <button type="button" data-weather-question="How does tomorrow compare with today?">Today vs. tomorrow</button>
       </div>
       <form id="weatherAskForm">
-        <label class="sr-only" for="weatherQuestion">Your weather question</label>
+        <label class="sr-only" for="weatherQuestion">Your almanac question</label>
         <div class="ask-composer">
-          <textarea id="weatherQuestion" name="question" rows="2" maxlength="500" required placeholder="What would you like to know?" aria-describedby="weatherAskContext weatherAskStatus"></textarea>
-          <button type="submit" class="ask-submit" id="weatherAskSubmit" aria-label="Ask weather question"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7M12 5v15"/></svg></button>
+          <textarea id="weatherQuestion" name="question" rows="2" maxlength="500" required placeholder="Ask about the forecast or past temperatures…" aria-describedby="weatherAskContext weatherAskStatus"></textarea>
+          <button type="submit" class="ask-submit" id="weatherAskSubmit" aria-label="Ask the almanac a question"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7M12 5v15"/></svg></button>
         </div>
-        <div class="ask-meta"><span id="weatherAskContext">Las Vegas · default location · °F</span><span>Up to 7 days</span></div>
+        <div class="ask-meta"><span id="weatherAskContext">Las Vegas · default location · °F</span><span>16-day forecast · 13 months of records</span></div>
       </form>
       <p id="weatherAskStatus" class="ask-status" role="status" aria-live="polite">AI answers can make mistakes. Check official alerts for safety decisions.</p>
       <div id="weatherAskResult" class="ask-result" hidden>
-        <div class="section-kicker">Forecast answer</div>
+        <div class="section-kicker">Almanac answer</div>
         <div id="weatherAskAnswer" class="ask-answer"></div>
         <div id="weatherAskSources" class="ask-sources"></div>
       </div>
@@ -361,7 +326,7 @@
 
 <script src="assets/d3-array.min.js" defer></script>
 <script src="assets/d3-geo.min.js" defer></script>
-<script src="assets/desktop-overview.js?v=6.37" defer></script>
-<script src="app.js?v=6.37" defer></script>
+<script src="assets/desktop-overview.js?v=6.41" defer></script>
+<script src="app.js?v=6.41" defer></script>
 </body>
 </html>

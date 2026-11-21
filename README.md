@@ -55,7 +55,7 @@ Interface screenshots captured October 31, 2026. The November 4 release preserve
 - Three-day pollen forecasts from Google Maps Platform Pollen API
 - 10-day forecast and selectable comparison cities
 - Almanac comparison against historical weather
-- Optional AI insights and weather questions with OpenRouter or Anthropic Claude
+- Optional AI insights and Ask the Almanac questions (forecast + temperature history) with OpenRouter or Anthropic Claude
 - Desktop overview, tabbed detail views, and a live weather house scene
 - Dark/light modes, compact mode, and mobile-friendly layout
 - Docker Compose support with isolated persistent storage
@@ -131,7 +131,7 @@ source venv/bin/activate
 
 ## OpenRouter deployment
 
-This deployment uses `AI_PROVIDER=openrouter` for both Ask the weather and AI Insights, with `OPENROUTER_MODEL=anthropic/claude-sonnet-4.6`. Billing is through OpenRouter, not the direct Anthropic account.
+This deployment uses `AI_PROVIDER=openrouter` for both Ask the Almanac and AI Insights, with `OPENROUTER_MODEL=anthropic/claude-sonnet-4.6`. Billing is through OpenRouter, not the direct Anthropic account.
 
 Docker mounts the supplied `govee.env` as a read-only Compose secret at `/run/secrets/openrouter_key`; `OPENROUTER_API_KEY_FILE` points to it. The file can contain a bare key or an `OPENROUTER_API_KEY=...` assignment. Do not delete or move the source file without updating the Compose secret path. The credential is not copied into the repository or image and is not sent to the browser. Alternatively, server deployments may supply `OPENROUTER_API_KEY` directly.
 
@@ -246,9 +246,15 @@ The house scene follows current weather conditions and local solar time, refresh
 | `/healthz` | Minimal unauthenticated container health check. |
 | `/api/status` | Cache, refresh, history retention, and AI status. |
 
-## Ask The Weather API
+## Ask The Almanac API
 
-Weather questions use the same AI provider configuration as AI Insights: OpenRouter in the supplied deployment, or `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` with the Anthropic provider. No extra key is needed. Each question is standalone; there is no conversation history or answer cache.
+Almanac questions use the same AI provider configuration as AI Insights: OpenRouter in the supplied deployment, or `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` with the Anthropic provider. No extra key is needed. Each question is standalone; there is no conversation history or answer cache.
+
+Ask the Almanac screenshots captured November 21, 2026 (v2026.11.21), answering real questions against live Open-Meteo data.
+
+![Ask the Almanac answering a historical temperature question on desktop](docs/screenshot-almanac-desktop.png)
+
+<img src="docs/screenshot-almanac-mobile.png" alt="Ask the Almanac answering a seasonal forecast question on mobile" width="390">
 
 `GET /api/weather/ask/status` returns `{"available": true}` when a nonblank server key is configured. This is a configuration check, **not** a successful provider/billing/model health check, and makes no paid call.
 
@@ -270,9 +276,9 @@ Weather questions use the same AI provider configuration as AI Insights: OpenRou
 - `unit`: exactly `F` or `C`. Fahrenheit uses mph/inches; Celsius uses km/h/mm. Other field units remain explicitly identified in forecast metadata.
 - Maximum body: 8,192 bytes. Extra fields, client forecasts and custom upstream URLs are rejected.
 
-Success is `{"answer": "...", "sources": [{"label": "Open-Meteo forecast", "url": "https://open-meteo.com/"}], "generated_at": "<UTC ISO timestamp>", "location": "Las Vegas", "unit": "F"}`. Render the answer as text, not HTML. Responses use `Cache-Control: no-store`.
+Success is `{"answer": "...", "sources": [{"label": "Open-Meteo forecast", "url": "https://open-meteo.com/"}, {"label": "Open-Meteo historical archive", "url": "https://open-meteo.com/en/docs"}], "generated_at": "<UTC ISO timestamp>", "location": "Las Vegas", "unit": "F"}`. The archive source is listed only when historical records were used. Render the answer as text, not HTML. Responses use `Cache-Control: no-store`.
 
-The server fetches fresh Open-Meteo current conditions, the next 48 hourly forecast entries and seven daily forecasts over HTTPS, with no redirects. It includes timestamps, local timezone, retrieval time and unit metadata in the model context; current timestamps older than two hours or over 15 minutes in the future are rejected. The prompt requires admitting missing data, uncertainty and questions beyond the forecast horizon. It does not include sensor secrets, pollen, historical records or official severe-weather alerts. AI answers are not safety guarantees; consult official alerts for hazardous weather. No tools, device control or other actions are available to the model. The question and supplied location are sent to Anthropic; coordinates are sent to both forecast and AI providers.
+The server fetches fresh Open-Meteo current conditions, the next 48 hourly forecast entries and 16 daily forecasts (plus the past 7 days) over HTTPS, with no redirects, and daily temperature highs/lows for roughly the past 400 days from the Open-Meteo historical archive. The archive window is cached per location and unit for the current day in `almanac_history_cache.json` under the data directory; if the archive is unavailable the question is still answered from the forecast and the recent 7-day window, and a stale cache is used when present. Precomputed milestones (last freezing low, last low in the 30s, last 100°F/110°F high, and similar) ground "last time" answers. The context includes timestamps, local timezone, retrieval time and unit metadata; current timestamps older than two hours or over 15 minutes in the future are rejected. The prompt requires admitting missing data, gaps in the records, uncertainty and questions beyond the forecast horizon, and labeling historical estimates as estimates. It does not include sensor secrets, pollen, precipitation history or official severe-weather alerts. AI answers are not safety guarantees; consult official alerts for hazardous weather. No tools, device control or other actions are available to the model. The question and supplied location are sent to the AI provider; coordinates are sent to both Open-Meteo and the AI provider.
 
 Cost and availability safeguards:
 
@@ -326,7 +332,7 @@ The supplied Compose deployment requires Cloudflare Access, validates RS256 asse
 
 AI insights run in the background. GET returns cached or pending results; POST requests a refresh. All generation attempts, including failures, share a durable four-attempt daily cap and 15-minute minimum interval. Only one insight operation runs at a time. Sensor refreshes also share one background operation. The pollen budget counts every outbound attempt, persists across restarts, and never holds the cache lock during network I/O.
 
-Almanac and insights requests accept `lat`, `lon`, and `timezone`; the browser sends its forecast location. Caches are keyed by location and local calendar date. Insight timestamps include a timezone offset. Old sensor values remain visible during outages but are excluded from fresh AI context; `/api/history` returns only the last 24 hours.
+Almanac and insights requests accept `lat`, `lon`, and `timezone`; the browser sends its forecast location. The almanac cache refreshes by local calendar date. Automatic insights updates are due six hours after the last successful update, subject to the request budget. The dashboard shows update times in the forecast location's timezone. Old sensor values remain visible during outages but are excluded from fresh AI context; `/api/history` returns only the last 24 hours.
 
 Dependencies are pinned in `requirements.txt` and the complete resolved Linux environment in `requirements.lock`. Rebuild to apply dependency updates; restarting does not change installed packages. The image copies explicit application assets, runs as UID 10001, and uses a read-only root filesystem with a dedicated writable data volume.
 
